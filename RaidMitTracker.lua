@@ -37,6 +37,19 @@ local function GetChannel()
     return nil
 end
 
+-- TWW 호환 쿨타임 조회
+-- 구버전: GetSpellCooldown(id) → start, duration
+-- TWW:    C_Spell.GetSpellCooldown(id) → { startTime, duration, ... }
+local function GetCooldown(spellID)
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local info = C_Spell.GetSpellCooldown(spellID)
+        return (info and info.startTime or 0), (info and info.duration or 0)
+    elseif type(GetSpellCooldown) == "function" then
+        return GetSpellCooldown(spellID)
+    end
+    return 0, 0
+end
+
 -- 본인이 보유한 공생기 스펠 ID 목록 수집
 local function CollectMySpells()
     local result = {}
@@ -85,25 +98,52 @@ function RMT_SendHave()
     end
 end
 
--- USED 전송 (스킬 사용 시 자동 발송)
-local function SendUsed(spellID)
-    local ch = GetChannel()
-    if not ch then return end
+-- 스킬 사용 로컬 반영 (메시지 수신 및 자기 자신 모두 이 함수로 처리)
+local function ProcessUsed(name, spellID, castTime, actualCD)
+    if not RMT.roster[name] then RMT.roster[name] = {} end
+    if not RMT.roster[name][spellID] then
+        local dbEntry = RMT_SPELLS[spellID]
+        RMT.roster[name][spellID] = { cd = dbEntry and dbEntry.cd or 180, endTime = 0 }
+    end
+    local entry   = RMT.roster[name][spellID]
+    local cd      = actualCD or entry.cd
+    entry.endTime = castTime + cd
+    RMT_UI_RefreshPanel()
+end
 
-    -- 충전 스킬: 충전이 남아있으면 전송 안 함 (아직 사용 가능)
-    local currentCharges, maxCharges, _, chargeDuration = GetSpellCharges(spellID)
-    if maxCharges and maxCharges > 1 then
-        if currentCharges and currentCharges > 0 then return end
-        -- 모든 충전 소모 → 충전 쿨타임으로 보고
-        local actualCD = math.floor(chargeDuration or RMT_SPELLS[spellID].cd)
-        C_ChatInfo.SendAddonMessage(PREFIX, "USED:" .. spellID .. ":" .. string.format("%.3f", GetTime()) .. ":" .. actualCD, ch)
-        return
+-- USED 처리: 로컬 즉시 반영 + 그룹이면 공대원에게도 브로드캐스트
+-- 솔로/공대장 본인 사용 모두 정상 작동
+local function SendUsed(spellID)
+    local now  = GetTime()
+    local name = UnitName("player")
+
+    -- TWW: GetSpellCharges → C_Spell.GetSpellCharges 로 이동됨 (하위 호환 처리)
+    local getCharges = (C_Spell and C_Spell.GetSpellCharges) or (type(GetSpellCharges) == "function" and GetSpellCharges)
+
+    local actualCD
+    -- 충전 스킬: 충전이 남아있으면 아직 사용 가능 → 무시
+    if getCharges then
+        local currentCharges, maxCharges, _, chargeDuration = getCharges(spellID)
+        if maxCharges and maxCharges > 1 then
+            if currentCharges and currentCharges > 0 then return end
+            actualCD = math.floor(chargeDuration or RMT_SPELLS[spellID].cd)
+        end
     end
 
-    -- 일반 스킬: GetSpellCooldown으로 탤런트 적용된 실제 쿨타임 사용
-    local _, duration = GetSpellCooldown(spellID)
-    local actualCD = (duration and duration > 2) and math.floor(duration) or RMT_SPELLS[spellID].cd
-    C_ChatInfo.SendAddonMessage(PREFIX, "USED:" .. spellID .. ":" .. string.format("%.3f", GetTime()) .. ":" .. actualCD, ch)
+    -- 일반 스킬: 탤런트 적용된 실제 쿨타임
+    if not actualCD then
+        local _, duration = GetCooldown(spellID)
+        actualCD = (duration and duration > 2) and math.floor(duration) or RMT_SPELLS[spellID].cd
+    end
+
+    -- ① 로컬 즉시 반영 (솔로 / 공대장 포함 항상 동작)
+    ProcessUsed(name, spellID, now, actualCD)
+
+    -- ② 그룹 내 다른 공대원에게 브로드캐스트
+    local ch = GetChannel()
+    if ch then
+        C_ChatInfo.SendAddonMessage(PREFIX, "USED:" .. spellID .. ":" .. string.format("%.3f", now) .. ":" .. actualCD, ch)
+    end
 end
 
 -- ================================================================
@@ -114,6 +154,9 @@ local function OnAddonMessage(_, event, prefix, message, _, sender)
 
     -- sender 정규화 (서버명 제거)
     local name = sender:match("^([^%-]+)") or sender
+
+    -- 본인이 보낸 USED는 SendUsed()에서 이미 로컬 처리 완료 → 중복 방지
+    local myName = UnitName("player")
 
     -- CHECK
     if message == "CHECK" then
@@ -140,63 +183,92 @@ local function OnAddonMessage(_, event, prefix, message, _, sender)
     -- USED:spellID:timestamp:actualCD
     local usedID, usedTime, usedCD = message:match("^USED:(%d+):([%d%.]+):?(%d*)$")
     if usedID then
-        local spellID  = tonumber(usedID)
-        local castTime = tonumber(usedTime)
-        local actualCD = tonumber(usedCD)   -- 탤런트 적용된 실제 쿨타임 (없으면 nil)
-        if not RMT.roster[name] then RMT.roster[name] = {} end
-        if not RMT.roster[name][spellID] then
-            local dbEntry = RMT_SPELLS[spellID]
-            RMT.roster[name][spellID] = { cd = dbEntry and dbEntry.cd or 180, endTime = 0 }
-        end
-        local entry   = RMT.roster[name][spellID]
-        local cd      = actualCD or entry.cd
-        entry.endTime = castTime + cd
-        RMT_UI_RefreshPanel()
+        -- 본인 메시지는 SendUsed()에서 이미 반영했으므로 스킵
+        if name == myName then return end
+        ProcessUsed(name, tonumber(usedID), tonumber(usedTime), tonumber(usedCD))
         return
     end
 end
 
 -- ================================================================
--- SELF CAST DETECTION
--- 본인이 공생기 사용 시 → USED 메시지 발송
+-- RESET DETECTION  —  RegisterFrames() 보다 먼저 선언해야 upvalue로 참조 가능
 -- ================================================================
-local castFrame = CreateFrame("Frame")
-castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-castFrame:SetScript("OnEvent", function(_, _, unit, _, spellID)
-    if RMT_SPELLS[spellID] then
-        SendUsed(spellID)
+local function DoWipeReset()
+    for _, spells in pairs(RMT.roster) do
+        for _, entry in pairs(spells) do
+            entry.endTime = 0
+        end
     end
-end)
-
--- ================================================================
--- COMBAT LOG BACKUP
--- 애드온 미설치 공대원 스킬 사용도 감지
--- ================================================================
-local combatFrame = CreateFrame("Frame")
-combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-combatFrame:SetScript("OnEvent", function()
-    local _, subEvent, _, sourceGUID, sourceName = CombatLogGetCurrentEventInfo()
-    if subEvent ~= "SPELL_CAST_SUCCESS" then return end
-
-    local _, _, _, _, _, spellID = select(9, CombatLogGetCurrentEventInfo())
-    if not spellID or not RMT_SPELLS[spellID] then return end
-
-    -- 본인 캐릭터는 UNIT_SPELLCAST_SUCCEEDED로 이미 처리됨
-    local myGUID = UnitGUID("player")
-    if sourceGUID == myGUID then return end
-
-    -- 공대원 이름 정규화
-    local name = sourceName and (sourceName:match("^([^%-]+)") or sourceName) or "Unknown"
-
-    if not RMT.roster[name] then RMT.roster[name] = {} end
-    if not RMT.roster[name][spellID] then
-        local dbEntry = RMT_SPELLS[spellID]
-        RMT.roster[name][spellID] = { cd = dbEntry and dbEntry.cd or 180, endTime = 0 }
-    end
-    local entry   = RMT.roster[name][spellID]
-    entry.endTime = GetTime() + entry.cd
     RMT_UI_RefreshPanel()
-end)
+    Log(RMT_L.WIPE_RESET)
+end
+
+local wasInEncounter = false
+local bossKilled     = false
+
+-- ================================================================
+-- SELF CAST DETECTION  /  COMBAT LOG BACKUP
+-- ⚠️  프레임 생성은 ADDON_LOADED 이후 RegisterFrames()에서 처리
+--     (main chunk 에서 RegisterEvent 하면 taint → ADDON_ACTION_FORBIDDEN)
+-- ================================================================
+local function RegisterFrames()
+    -- 본인 공생기 사용 감지
+    local castFrame = CreateFrame("Frame")
+    castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+    castFrame:SetScript("OnEvent", function(_, _, _, _, spellID)
+        if RMT_SPELLS[spellID] then
+            SendUsed(spellID)
+        end
+    end)
+
+    -- 전투 로그 백업 — 공대원 스킬 사용 감지 (USED 메시지 미수신 시 보완)
+    local combatFrame = CreateFrame("Frame")
+    combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    combatFrame:SetScript("OnEvent", function()
+        local _, subEvent, _, sourceGUID, sourceName = CombatLogGetCurrentEventInfo()
+        if subEvent ~= "SPELL_CAST_SUCCESS" then return end
+
+        local spellID = select(12, CombatLogGetCurrentEventInfo())
+        if not spellID or not RMT_SPELLS[spellID] then return end
+
+        -- 본인 캐릭터는 UNIT_SPELLCAST_SUCCEEDED로 이미 처리됨
+        if sourceGUID == UnitGUID("player") then return end
+
+        -- 공대원 이름 정규화
+        local name = sourceName and (sourceName:match("^([^%-]+)") or sourceName) or "Unknown"
+
+        local dbEntry = RMT_SPELLS[spellID]
+        local cd = dbEntry and dbEntry.cd or 180
+        ProcessUsed(name, spellID, GetTime(), cd)
+    end)
+
+    -- 전멸/소프트리셋 감지
+    local wipeFrame = CreateFrame("Frame")
+    wipeFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    wipeFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    wipeFrame:RegisterEvent("BOSS_KILL")
+    wipeFrame:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_DISABLED" then
+            if IsEncounterInProgress() then wasInEncounter = true end
+            bossKilled = false
+        elseif event == "BOSS_KILL" then
+            bossKilled = true
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            if wasInEncounter and not bossKilled then DoWipeReset() end
+            wasInEncounter = false
+            bossKilled     = false
+        end
+    end)
+
+    -- 공대 구성 변경 시 자동 보고
+    local rosterFrame = CreateFrame("Frame")
+    rosterFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+    rosterFrame:SetScript("OnEvent", function()
+        C_Timer.After(2, function()
+            if GetChannel() then RMT_SendHave() end
+        end)
+    end)
+end
 
 -- ================================================================
 -- TEST MODE
@@ -255,6 +327,8 @@ local TEST_SPELLS = {
 local function RunTestMode()
     RMT.roster = {}
     local now = GetTime()
+
+    -- 샘플 캐릭터 (기존 유지)
     for _, entry in ipairs(TEST_SPELLS) do
         local spellID, remain = entry[1], entry[2]
         local data = RMT_SPELLS[spellID]
@@ -274,6 +348,36 @@ local function RunTestMode()
             }
         end
     end
+
+    -- 내 캐릭터 실제 스킬 추가
+    local myName = UnitName("player")
+    if myName then
+        -- 이름 충돌 방지 (샘플 이름과 겹칠 경우 대비)
+        local displayName = myName
+        if RMT.roster[displayName] then
+            displayName = myName .. "*"
+        end
+        RMT.roster[displayName] = {}
+        for spellID, data in pairs(RMT_SPELLS) do
+            if IsPlayerSpell(spellID) then
+                -- 실제 쿨타임 잔여 시간 반영
+                local start, duration = GetCooldown(spellID)
+                local endTime = 0
+                if start and start > 0 and duration and duration > 1.5 then
+                    endTime = start + duration
+                end
+                RMT.roster[displayName][spellID] = {
+                    cd      = data.cd,
+                    endTime = endTime,
+                }
+            end
+        end
+        -- 보유 스킬 없으면 항목 자체 제거
+        if not next(RMT.roster[displayName]) then
+            RMT.roster[displayName] = nil
+        end
+    end
+
     RMT_UI_ForceShow()   -- 리더 체크 없이 패널 강제 표시
     Log(RMT_L.TEST_MODE)
 end
@@ -327,16 +431,16 @@ loader:SetScript("OnEvent", function(self, event, ...)
         RMTdb  = RMTdb or {}
         RMT.db = RMTdb
 
-        -- 기본값 설정 (저장된 값 없을 때만)
+        -- 기본값 설정 (저장된 값 없을 때만) — 슬라이더 범위의 중간값
         local defaults = {
-            bgAlpha    = 0.96,
+            bgAlpha    = 0.55,   -- 0.1 ~ 1.0  중간
             barTexture = "Interface\\TargetingFrame\\UI-StatusBar",
-            rowHeight  = 28,
-            barHeight  = 16,
-            iconSize   = 22,
+            rowHeight  = 44,     -- 20 ~ 68    중간
+            barHeight  = 36,     -- 4  ~ 68    중간
+            iconSize   = 36,     -- 14 ~ 58    중간
             showIcon   = true,
-            fontSize   = 11,
-            rowSpacing = 3,
+            fontSize   = 18,     -- 8  ~ 28    중간
+            rowSpacing = 0,      -- 0  ~ 24    (0이 최솟값)
             sortMode   = "name",
             tooltipOn  = true,
         }
@@ -346,6 +450,7 @@ loader:SetScript("OnEvent", function(self, event, ...)
 
         RMT_UI_Init()
         SetupMinimapButton()
+        RegisterFrames()   -- ← 이벤트 프레임은 반드시 ADDON_LOADED 이후에 등록
 
         Log("v" .. VERSION .. " " .. RMT_L.LOADED .. "  |cff888888/rmt|r")
     elseif event == "CHAT_MSG_ADDON" then
@@ -386,55 +491,3 @@ function SetupMinimapButton()
     DBIcon:Register("RaidMitTracker", launcher, RMTdb.minimapIcon)
 end
 
--- ================================================================
--- RESET DETECTION
--- 보스 인카운터 중 클리어 없이 전투 종료 = 리셋 (전멸/소프트리셋 모두 감지)
--- ================================================================
-local function DoWipeReset()
-    for _, spells in pairs(RMT.roster) do
-        for _, entry in pairs(spells) do
-            entry.endTime = 0
-        end
-    end
-    RMT_UI_RefreshPanel()
-    Log(RMT_L.WIPE_RESET)
-end
-
-local wasInEncounter = false
-local bossKilled     = false
-
-local wipeFrame = CreateFrame("Frame")
-wipeFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-wipeFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-wipeFrame:RegisterEvent("BOSS_KILL")
-wipeFrame:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_REGEN_DISABLED" then
-        if IsEncounterInProgress() then
-            wasInEncounter = true
-        end
-        bossKilled = false
-
-    elseif event == "BOSS_KILL" then
-        bossKilled = true
-
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        if wasInEncounter and not bossKilled then
-            -- 보스 인카운터 도중 클리어 없이 전투 종료 = 전멸 또는 소프트리셋
-            DoWipeReset()
-        end
-        wasInEncounter = false
-        bossKilled     = false
-    end
-end)
-
--- 공대 구성 변경 시 자동 보고 (선택적)
-local rosterFrame = CreateFrame("Frame")
-rosterFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-rosterFrame:SetScript("OnEvent", function()
-    -- 공대 합류 직후 자동으로 본인 스킬 보고
-    C_Timer.After(2, function()
-        if GetChannel() then
-            RMT_SendHave()
-        end
-    end)
-end)

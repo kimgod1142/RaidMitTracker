@@ -352,11 +352,11 @@ end
 -- ================================================================
 AddHeader("외관")
 AddSlider("배경 투명도", 0.1, 1.0, 0.05, "bgAlpha",    "%.2f")
-AddSlider("행 높이",     20,  44,  1,    "rowHeight",  "%d px")
-AddSlider("바 두께",     4,   36,  1,    "barHeight",  "%d px")
-AddSlider("아이콘 크기", 14,  36,  1,    "iconSize",   "%d px")
-AddSlider("폰트 크기",   8,   18,  1,    "fontSize",   "%d")
-AddSlider("행 간격",     0,   12,  1,    "rowSpacing", "%d px")
+AddSlider("행 높이",     20,  68,  1,    "rowHeight",  "%d px")
+AddSlider("바 두께",     4,   68,  1,    "barHeight",  "%d px")
+AddSlider("아이콘 크기", 14,  58,  1,    "iconSize",   "%d px")
+AddSlider("폰트 크기",   8,   28,  1,    "fontSize",   "%d")
+AddSlider("행 간격",     0,   24,  1,    "rowSpacing", "%d px")
 
 -- 바 텍스처 드롭다운
 texBtn = AddDropdownBtn("바 텍스처",
