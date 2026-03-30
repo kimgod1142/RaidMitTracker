@@ -12,4 +12,5 @@ libs\LibStub\LibStub.lua
 Locales.lua
 SpellDB.lua
 UI.lua
+Options.lua
 RaidMitTracker.lua

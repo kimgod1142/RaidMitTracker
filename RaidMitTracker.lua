@@ -296,6 +296,8 @@ SlashCmdList["RMT"] = function(msg)
         RMT_UI_ShowPanel()
     elseif arg == "test" then
         RunTestMode()
+    elseif arg == "config" then
+        if RMT_Options_Open then RMT_Options_Open() end
     elseif arg == "" then
         if IsLeaderOrAssist() then
             RMT_SendCheck()
@@ -322,8 +324,23 @@ loader:SetScript("OnEvent", function(self, event, ...)
 
         C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
 
-        RMTdb          = RMTdb or {}
-        RMT.db         = RMTdb
+        RMTdb  = RMTdb or {}
+        RMT.db = RMTdb
+
+        -- 기본값 설정 (저장된 값 없을 때만)
+        local defaults = {
+            bgAlpha    = 0.96,
+            barTexture = "Interface\\TargetingFrame\\UI-StatusBar",
+            rowHeight  = 28,
+            iconSize   = 22,
+            fontSize   = 11,
+            rowSpacing = 3,
+            sortMode   = "name",
+            tooltipOn  = true,
+        }
+        for k, v in pairs(defaults) do
+            if RMTdb[k] == nil then RMTdb[k] = v end
+        end
 
         RMT_UI_Init()
 

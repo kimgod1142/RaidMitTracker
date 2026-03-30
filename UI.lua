@@ -76,7 +76,7 @@ if panel.SetBackdrop then
         edgeSize = 12,
         insets   = { left = 3, right = 3, top = 3, bottom = 3 },
     })
-    panel:SetBackdropColor(0.04, 0.04, 0.08, 0.96)
+    panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.96)
     panel:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
 end
 
@@ -166,24 +166,32 @@ local rowPool    = {}
 local activeRows = {}
 
 local function MakeRow(parent)
+    local rowH   = (RMTdb and RMTdb.rowHeight) or ROW_H
+    local iconSz = (RMTdb and RMTdb.iconSize)  or ICON_SZ
+    local fSize  = (RMTdb and RMTdb.fontSize)  or 11
+    local barH   = math.max(8, math.floor(rowH * 0.57))
+    local texPath = (RMTdb and RMTdb.barTexture) or "Interface\\TargetingFrame\\UI-StatusBar"
+    local fontPath = GameFontNormalSmall:GetFont()
+
     local row = {}
     row.frame = CreateFrame("Frame", nil, parent)
-    row.frame:SetHeight(ROW_H)
+    row.frame:SetHeight(rowH)
 
     local nameBg = row.frame:CreateTexture(nil, "BACKGROUND")
     nameBg:SetColorTexture(0, 0, 0, 0.3)
-    nameBg:SetPoint("TOPLEFT",    row.frame, "TOPLEFT",   0, 0)
-    nameBg:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT",0, 0)
+    nameBg:SetPoint("TOPLEFT",    row.frame, "TOPLEFT",    0, 0)
+    nameBg:SetPoint("BOTTOMLEFT", row.frame, "BOTTOMLEFT", 0, 0)
     nameBg:SetWidth(NAME_W)
 
-    row.nameText = row.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.nameText = row.frame:CreateFontString(nil, "OVERLAY")
+    row.nameText:SetFont(fontPath, fSize)
     row.nameText:SetPoint("LEFT", row.frame, "LEFT", 4, 0)
     row.nameText:SetWidth(NAME_W - 6)
     row.nameText:SetJustifyH("LEFT")
     row.nameText:SetWordWrap(false)
 
     row.icon = row.frame:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(ICON_SZ, ICON_SZ)
+    row.icon:SetSize(iconSz, iconSz)
     row.icon:SetPoint("LEFT", row.frame, "LEFT", NAME_W + 4, 0)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -193,6 +201,7 @@ local function MakeRow(parent)
     iconHover:EnableMouse(true)
     iconHover:SetScript("OnEnter", function(self)
         if not row.spellID then return end
+        if RMTdb and RMTdb.tooltipOn == false then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetSpellByID(row.spellID)
         GameTooltip:Show()
@@ -204,26 +213,26 @@ local function MakeRow(parent)
 
     local barBg = row.frame:CreateTexture(nil, "BACKGROUND")
     barBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-    barBg:SetPoint("LEFT",  row.frame, "LEFT",  NAME_W + ICON_SZ + 8, -(ROW_H - BAR_H) / 2)
-    barBg:SetPoint("RIGHT", row.frame, "RIGHT", 0,                    -(ROW_H - BAR_H) / 2)
-    barBg:SetHeight(BAR_H)
+    barBg:SetPoint("LEFT",  row.frame, "LEFT",  NAME_W + iconSz + 8, -(rowH - barH) / 2)
+    barBg:SetPoint("RIGHT", row.frame, "RIGHT", 0,                   -(rowH - barH) / 2)
+    barBg:SetHeight(barH)
     row.barBg = barBg
 
     local bar = CreateFrame("StatusBar", nil, row.frame)
-    bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    bar:SetStatusBarTexture(texPath)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
-    bar:SetPoint("TOPLEFT",     barBg, "TOPLEFT",     1,  -1)
-    bar:SetPoint("BOTTOMRIGHT", barBg, "BOTTOMRIGHT", -1,  1)
+    bar:SetPoint("TOPLEFT",     barBg, "TOPLEFT",     1, -1)
+    bar:SetPoint("BOTTOMRIGHT", barBg, "BOTTOMRIGHT", -1, 1)
     row.bar = bar
 
-    -- 타이머 텍스트 (우측 고정 — 숫자 카운트다운)
-    row.cdText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.cdText = bar:CreateFontString(nil, "OVERLAY")
+    row.cdText:SetFont(fontPath, fSize)
     row.cdText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
     row.cdText:SetJustifyH("RIGHT")
 
-    -- "사용가능" 텍스트 (바 중앙 고정)
-    row.readyText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    row.readyText = bar:CreateFontString(nil, "OVERLAY")
+    row.readyText:SetFont(fontPath, fSize)
     row.readyText:SetPoint("CENTER", bar, "CENTER", 0, 0)
     row.readyText:SetJustifyH("CENTER")
     row.readyText:SetText("|cff00ff00" .. RMT_L.READY .. "|r")
@@ -305,11 +314,20 @@ function RMT_UI_RefreshPanel(force)
             }
         end
     end
+    local sortMode = RMTdb and RMTdb.sortMode or "name"
     table.sort(entries, function(a, b)
+        if sortMode == "cd" then
+            local now = GetTime()
+            local ra  = a.endTime > 0 and math.max(0, a.endTime - now) or 0
+            local rb  = b.endTime > 0 and math.max(0, b.endTime - now) or 0
+            return ra < rb
+        end
         if a.player ~= b.player then return a.player < b.player end
         return a.spellID < b.spellID
     end)
 
+    local rowH = (RMTdb and RMTdb.rowHeight)  or ROW_H
+    local gap  = (RMTdb and RMTdb.rowSpacing) or 3
     local yOff = -(TITLE_H + 4)
 
     for _, e in ipairs(entries) do
@@ -334,11 +352,11 @@ function RMT_UI_RefreshPanel(force)
         row.endTime = e.endTime
 
         activeRows[#activeRows + 1] = row
-        yOff = yOff - ROW_H - 3
+        yOff = yOff - rowH - gap
     end
 
     -- 콘텐츠 전체 높이 계산 → 리사이즈 하한선으로 설정
-    local contentH = TITLE_H + (#entries * (ROW_H + 3)) + PAD
+    local contentH = TITLE_H + (#entries * (rowH + gap)) + PAD
     MIN_H = math.max(TITLE_H + PAD * 2, contentH)
     panel:SetResizeBounds(MIN_W, MIN_H)
 
@@ -353,6 +371,18 @@ end
 -- ================================================================
 -- 공개 함수
 -- ================================================================
+
+-- 설정 변경 시 호출: 행 풀 초기화 후 재생성
+function RMT_UI_ApplySettings()
+    for _, row in ipairs(activeRows) do row.frame:Hide() end
+    activeRows = {}
+    wipe(rowPool)
+    if panel.SetBackdrop then
+        panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.96)
+    end
+    RMT_UI_RefreshPanel()
+end
+
 function RMT_UI_ShowPanel()
     if not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
         print("|cffff9900[RMT]|r " .. RMT_L.LEADER_ONLY)
