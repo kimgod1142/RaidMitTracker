@@ -51,6 +51,9 @@ if opt.SetBackdrop then
     opt:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
 end
 
+-- ESC 키로 창 닫기
+tinsert(UISpecialFrames, "RMT_OptionsFrame")
+
 local titleFs = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 titleFs:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, -9)
 titleFs:SetText("|cffff9900공생기 트래커|r  설정")

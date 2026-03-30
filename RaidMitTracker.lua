@@ -345,12 +345,46 @@ loader:SetScript("OnEvent", function(self, event, ...)
         end
 
         RMT_UI_Init()
+        SetupMinimapButton()
 
         Log("v" .. VERSION .. " " .. RMT_L.LOADED .. "  |cff888888/rmt|r")
     elseif event == "CHAT_MSG_ADDON" then
         OnAddonMessage(nil, event, ...)
     end
 end)
+
+-- ================================================================
+-- MINIMAP BUTTON
+-- ================================================================
+function SetupMinimapButton()
+    local LDB    = LibStub("LibDataBroker-1.1", true)
+    local DBIcon = LibStub("LibDBIcon-1.0",     true)
+    if not LDB or not DBIcon then return end
+
+    local launcher = LDB:NewDataObject("RaidMitTracker", {
+        type = "launcher",
+        text = "Raid Mit Tracker",
+        icon = "Interface\\Icons\\Spell_Holy_GuardianSpirit",
+
+        OnClick = function(self, btn)
+            if btn == "LeftButton" then
+                if RMT_Options_Open then RMT_Options_Open() end
+            elseif btn == "RightButton" then
+                RMT_UI_ShowPanel()
+            end
+        end,
+
+        OnTooltipShow = function(tip)
+            tip:AddLine("|cffff9900Raid Mit Tracker|r")
+            tip:AddLine(" ")
+            tip:AddLine("|cffffffff좌클릭|r  설정 열기")
+            tip:AddLine("|cffffffff우클릭|r  공생기 패널 열기")
+        end,
+    })
+
+    RMTdb.minimapIcon = RMTdb.minimapIcon or {}
+    DBIcon:Register("RaidMitTracker", launcher, RMTdb.minimapIcon)
+end
 
 -- ================================================================
 -- RESET DETECTION
