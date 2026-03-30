@@ -334,8 +334,8 @@ loader:SetScript("OnEvent", function(self, event, ...)
 end)
 
 -- ================================================================
--- WIPE DETECTION
--- 전멸 감지: 본인 사망 후 3초 뒤 공대원 90% 이상 사망 시 쿨타임 초기화
+-- RESET DETECTION
+-- 보스 인카운터 중 클리어 없이 전투 종료 = 리셋 (전멸/소프트리셋 모두 감지)
 -- ================================================================
 local function DoWipeReset()
     for _, spells in pairs(RMT.roster) do
@@ -347,24 +347,31 @@ local function DoWipeReset()
     Log(RMT_L.WIPE_RESET)
 end
 
+local wasInEncounter = false
+local bossKilled     = false
+
 local wipeFrame = CreateFrame("Frame")
-wipeFrame:RegisterEvent("PLAYER_DEAD")
-wipeFrame:SetScript("OnEvent", function()
-    if not IsInRaid() then return end
-    C_Timer.After(3, function()
-        local total = GetNumGroupMembers()
-        if total == 0 then return end
-        local dead = 0
-        for i = 1, total do
-            if UnitIsDeadOrGhost("raid" .. i) then
-                dead = dead + 1
-            end
+wipeFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+wipeFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+wipeFrame:RegisterEvent("BOSS_KILL")
+wipeFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        if IsEncounterInProgress() then
+            wasInEncounter = true
         end
-        -- 공대원 90% 이상 사망 = 전멸로 판정
-        if dead >= total * 0.9 then
+        bossKilled = false
+
+    elseif event == "BOSS_KILL" then
+        bossKilled = true
+
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if wasInEncounter and not bossKilled then
+            -- 보스 인카운터 도중 클리어 없이 전투 종료 = 전멸 또는 소프트리셋
             DoWipeReset()
         end
-    end)
+        wasInEncounter = false
+        bossKilled     = false
+    end
 end)
 
 -- 공대 구성 변경 시 자동 보고 (선택적)
