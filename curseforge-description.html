@@ -1,0 +1,96 @@
+<h2>RaidMitTracker</h2>
+<p>Track every raid mitigation and external cooldown in real time — <strong>without chat spam</strong>.</p>
+<p>Cooldown data is shared silently between addon users via addon messages. Nothing appears in raid chat. The raid leader sees a live panel with class-colored bars counting down each spell.</p>
+
+<h3>Key Features</h3>
+<ul>
+  <li><strong>Silent communication</strong> — uses <code>SendAddonMessage</code>, invisible to non-addon users and raid chat.</li>
+  <li><strong>Auto-report on group join</strong> — members automatically announce their available spells when entering a group.</li>
+  <li><strong>Live cooldown bars</strong> — smooth, class-colored status bars update every frame.</li>
+  <li><strong>Combat log backup</strong> — spell casts by members without the addon are still detected.</li>
+  <li><strong>Resizable &amp; draggable panel</strong> — position and size are saved between sessions.</li>
+  <li><strong>Solo test mode</strong> — <code>/rmt test</code> loads dummy data so you can preview the UI without a group.</li>
+  <li><strong>English / Korean UI</strong> — automatically switches based on your client locale (enUS / koKR).</li>
+</ul>
+
+<h3>Tracked Spells — Raid Cooldowns</h3>
+<table>
+  <tr><th>Spell</th><th>Class / Spec</th><th>Cooldown</th></tr>
+  <tr><td>Power Word: Barrier</td><td>Discipline Priest</td><td>3 min</td></tr>
+  <tr><td>Divine Hymn</td><td>Holy Priest</td><td>3 min</td></tr>
+  <tr><td>Anti-Magic Zone</td><td>Death Knight (any spec)</td><td>4 min</td></tr>
+  <tr><td>Aura Mastery</td><td>Holy Paladin</td><td>3 min</td></tr>
+  <tr><td>Spirit Link Totem</td><td>Restoration Shaman</td><td>3 min</td></tr>
+  <tr><td>Healing Tide Totem</td><td>Restoration Shaman</td><td>3 min</td></tr>
+  <tr><td>Rewind</td><td>Preservation Evoker</td><td>4 min</td></tr>
+  <tr><td>Tranquility</td><td>Restoration Druid</td><td>3 min</td></tr>
+  <tr><td>Revival</td><td>Mistweaver Monk</td><td>3 min</td></tr>
+  <tr><td>Rallying Cry</td><td>Warrior (any spec)</td><td>3 min</td></tr>
+</table>
+
+<h3>Tracked Spells — External Cooldowns</h3>
+<table>
+  <tr><th>Spell</th><th>Class / Spec</th><th>Cooldown</th></tr>
+  <tr><td>Guardian Spirit</td><td>Holy Priest</td><td>3 min</td></tr>
+  <tr><td>Pain Suppression</td><td>Discipline Priest</td><td>3 min</td></tr>
+  <tr><td>Ironbark</td><td>Restoration Druid</td><td>1.5 min</td></tr>
+  <tr><td>Blessing of Sacrifice</td><td>Paladin (any spec)</td><td>2 min</td></tr>
+  <tr><td>Time Dilation</td><td>Preservation Evoker</td><td>1 min</td></tr>
+  <tr><td>Life Cocoon</td><td>Mistweaver Monk</td><td>2 min</td></tr>
+</table>
+
+<h3>Requirements</h3>
+<p><strong>All raid members should install the addon</strong> for complete pre-combat roster coverage. Members without the addon can still be partially tracked via combat log detection, but their spell list won't be known until they cast.</p>
+
+<h3>Commands</h3>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr><td><code>/rmt</code></td><td>Broadcast a cooldown check request to all members (leader / assistant only).</td></tr>
+  <tr><td><code>/rmt show</code></td><td>Open the tracker panel (leader / assistant only).</td></tr>
+  <tr><td><code>/rmt reset</code></td><td>Clear all tracked roster data.</td></tr>
+  <tr><td><code>/rmt test</code></td><td>Load dummy data for solo UI testing.</td></tr>
+</table>
+
+<h3>How It Works</h3>
+<p>
+  The raid leader sends a <strong>CHECK</strong> message via addon channel. Each member's addon replies with a <strong>HAVE</strong> message listing their available spell IDs. When a tracked spell is cast, a <strong>USED</strong> message is sent with the cast timestamp. The leader's addon calculates <code>endTime = castTime + hardcoded CD</code> and the bar counts down smoothly every frame.
+</p>
+<p>Direct cooldown queries on other players are not available in the WoW API — this addon works around that limitation using self-reporting and combat log event detection.</p>
+
+<h3>Limitations</h3>
+<ul>
+  <li>Requires the addon installed on all members for full pre-combat roster visibility.</li>
+  <li>Talent-reduced cooldowns are not currently detected (base CD values are used).</li>
+</ul>
+
+<hr/>
+
+<h2>RaidMitTracker (한국어)</h2>
+<p>공대 생존기(공생기) 및 외부생존기 쿨타임 실시간 추적 애드온 — <strong>공대 채팅에 아무것도 출력되지 않습니다.</strong></p>
+<p>공대원끼리 애드온 메시지로 쿨타임 정보를 조용히 공유합니다. 공대장 화면에는 직업 색상의 쿨타임 바가 실시간으로 업데이트됩니다.</p>
+
+<h3>주요 기능</h3>
+<ul>
+  <li><strong>채팅 스팸 없음</strong> — <code>SendAddonMessage</code> 사용, 채팅창에 전혀 표시되지 않음.</li>
+  <li><strong>자동 보고</strong> — 공대 합류 시 본인 보유 스킬 자동 전송.</li>
+  <li><strong>실시간 쿨타임 바</strong> — 매 프레임 업데이트, 직업 색상 적용.</li>
+  <li><strong>전투 로그 백업</strong> — 애드온 미설치 공대원의 스킬 사용도 감지.</li>
+  <li><strong>리사이즈 &amp; 드래그</strong> — 위치/크기 자동 저장.</li>
+  <li><strong>솔로 테스트 모드</strong> — <code>/rmt test</code> 로 혼자서도 UI 확인 가능.</li>
+  <li><strong>영어 / 한국어 자동 전환</strong> — 클라이언트 언어 설정 기준.</li>
+</ul>
+
+<h3>명령어</h3>
+<table>
+  <tr><th>명령어</th><th>설명</th></tr>
+  <tr><td><code>/rmt</code></td><td>공생기 확인 요청 전송 (공대장/부공대장 전용)</td></tr>
+  <tr><td><code>/rmt show</code></td><td>패널 표시 (공대장/부공대장 전용)</td></tr>
+  <tr><td><code>/rmt reset</code></td><td>목록 초기화</td></tr>
+  <tr><td><code>/rmt test</code></td><td>솔로 UI 테스트용 가짜 데이터 로드</td></tr>
+</table>
+
+<h3>주의 사항</h3>
+<ul>
+  <li>전체 공대원 설치 권장 — 미설치자는 전투 로그로 부분 감지만 가능.</li>
+  <li>쿨타임 감소 특성은 현재 미지원 (기본 쿨타임 사용).</li>
+</ul>
