@@ -2,6 +2,146 @@
 
 ---
 
+## v1.0.0 — Session 2 (2026-03-31)
+
+### 개요
+TWW API 비호환 버그 3종 수정, 자기 자신 스킬 추적 구조 개선, UI 기본값 및 슬라이더 범위 조정.
+다른 사람에게 배포 시 BugSack 에러 7~6회 발생하던 문제 전부 해결.
+
+---
+
+### 수정된 버그
+
+#### 🔴 `ADDON_ACTION_FORBIDDEN` (6~7회 반복)
+- **에러 위치**: `RaidMitTracker.lua` main chunk — `combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")`
+- **원인**: `castFrame`, `combatFrame`, `wipeFrame`, `rosterFrame` 4개 프레임이 파일 최상단(main chunk)에서 `CreateFrame` + `RegisterEvent` 호출. 다른 애드온이 먼저 로드되면서 Lua 상태가 taint되면 이후 `RegisterEvent` 호출이 `ADDON_ACTION_FORBIDDEN`으로 차단됨
+- **수정**: 4개 프레임 생성 전체를 `RegisterFrames()` 함수로 묶고, `ADDON_LOADED` 핸들러 안에서 호출 — taint 이전에 실행 보장
+
+```lua
+-- Before: 파일 최상단에서 직접 생성 (위험)
+local combatFrame = CreateFrame("Frame")
+combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")  -- ← ADDON_ACTION_FORBIDDEN
+
+-- After: ADDON_LOADED 이후에만 실행
+local function RegisterFrames()
+    local combatFrame = CreateFrame("Frame")
+    combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")  -- ← 안전
+    ...
+end
+-- ADDON_LOADED 핸들러 안에서: RegisterFrames()
+```
+
+---
+
+#### 🔴 `GetSpellCharges` nil (3회)
+- **에러 위치**: `SendUsed()` — spellID=6940 (희생의 축복) 처리 시
+- **원인**: TWW(The War Within)에서 `GetSpellCharges` 전역 함수가 `C_Spell.GetSpellCharges`로 이동됨. 전역 호출 시 nil
+- **수정**: 양쪽 호환 처리
+
+```lua
+local getCharges = (C_Spell and C_Spell.GetSpellCharges)
+               or (type(GetSpellCharges) == "function" and GetSpellCharges)
+```
+
+---
+
+#### 🔴 `GetSpellCooldown` nil
+- **에러 위치**: `RunTestMode()` — 내 캐릭터 실제 스킬 추가 로직
+- **원인**: `GetSpellCharges`와 동일하게 TWW에서 `C_Spell.GetSpellCooldown`으로 이동됨. 추가로 반환값도 변경됨
+  - 구버전: `start, duration, enabled, modRate` (다중 반환)
+  - TWW: `{ startTime, duration, isEnabled, modRate }` (테이블 반환)
+- **수정**: `GetCooldown()` 헬퍼 함수 추가 — 양쪽 API 모두 처리, 통일된 인터페이스 제공
+
+```lua
+local function GetCooldown(spellID)
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local info = C_Spell.GetSpellCooldown(spellID)
+        return (info and info.startTime or 0), (info and info.duration or 0)
+    elseif type(GetSpellCooldown) == "function" then
+        return GetSpellCooldown(spellID)
+    end
+    return 0, 0
+end
+```
+
+---
+
+#### 🔴 전투 로그 spellID 오독 (추적 무반응 원인)
+- **에러 위치**: `combatFrame` OnEvent — `COMBAT_LOG_EVENT_UNFILTERED` 핸들러
+- **원인**: `CombatLogGetCurrentEventInfo()` 반환값 순서 오해. `SPELL_CAST_SUCCESS` 기준으로:
+  - position 12 = spellID ✅
+  - position 14 = spellSchool ❌ (기존 코드가 이걸 읽고 있었음)
+- **수정**: `select(12, CombatLogGetCurrentEventInfo())`
+
+```lua
+-- Before (잘못됨 — spellSchool을 spellID로 읽음)
+local _, _, _, _, _, spellID = select(9, CombatLogGetCurrentEventInfo())
+-- select(9,...) 에서 6번째 = position 14 = spellSchool
+
+-- After (올바름)
+local spellID = select(12, CombatLogGetCurrentEventInfo())
+```
+
+---
+
+#### 🔴 공대장/솔로 환경에서 본인 스킬 사용이 패널에 미반영
+- **원인**: `SendUsed()` 내부에서 `GetChannel()` == nil (그룹 없음)이면 즉시 return. 패널 업데이트가 전혀 없었음. 그룹에 있어도 자신이 보낸 USED 메시지가 돌아와야만 업데이트 → 구조적으로 불안정
+- **수정**: `ProcessUsed()` 함수 도입. 로컬 즉시 반영 후 그룹 브로드캐스트 분리
+
+```lua
+-- 로컬 즉시 처리 (항상 실행)
+local function ProcessUsed(name, spellID, castTime, actualCD)
+    -- RMT.roster 업데이트 + RMT_UI_RefreshPanel()
+end
+
+local function SendUsed(spellID)
+    -- ① 항상: 로컬 즉시 반영
+    ProcessUsed(UnitName("player"), spellID, GetTime(), actualCD)
+    -- ② 그룹 있을 때만: 공대원에게 브로드캐스트
+    local ch = GetChannel()
+    if ch then C_ChatInfo.SendAddonMessage(...) end
+end
+
+-- OnAddonMessage에서 본인 USED는 중복 방지로 스킵
+if name == UnitName("player") then return end
+ProcessUsed(name, ...)
+```
+
+---
+
+### 기능 추가
+
+#### `/rmt test` — 내 캐릭터 실제 스킬 추가
+- 기존 랜덤 샘플 캐릭터 유지 + 현재 캐릭터의 실제 보유 공생기 스킬 추가 표시
+- `IsPlayerSpell(spellID)`로 보유 여부 확인
+- `GetCooldown(spellID)`로 실제 쿨타임 잔여시간 반영
+- 해당 직업에 공생기 없으면 행 자체 생략
+
+---
+
+### UI 기본값 및 슬라이더 범위 조정
+
+**배경**: "UI가 너무 작다"는 피드백 → 실제로 사용하기 좋은 크기를 슬라이더 중간값으로 설정
+
+| 항목 | 이전 기본값 | 새 기본값 | 이전 범위 | 새 범위 |
+|------|-----------|---------|---------|---------|
+| 배경 투명도 | 0.96 | 0.55 | 0.1~1.0 | 0.1~1.0 (변동 없음) |
+| 행 높이 | 28 px | 44 px | 20~44 | **20~68** |
+| 바 두께 | 16 px | 36 px | 4~36 | **4~68** |
+| 아이콘 크기 | 22 px | 36 px | 14~36 | **14~58** |
+| 폰트 크기 | 11 | 18 | 8~18 | **8~28** |
+| 행 간격 | 3 px | 0 px | 0~12 | **0~24** |
+
+> ⚠️ 기존 설치자는 `WTF/.../SavedVariables/RaidMitTracker.lua` 삭제 시 새 기본값 적용
+
+---
+
+### 변경된 파일
+- `RaidMitTracker.lua` — GetCooldown 헬퍼, ProcessUsed 구조, RegisterFrames, 기본값, test mode
+- `Options.lua` — 슬라이더 범위 수정
+
+---
+
 ## v1.0.0 (2026-03-30) — Initial Release
 
 ### 개요
