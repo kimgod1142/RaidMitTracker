@@ -23,7 +23,7 @@ RMT_SPELLS = {
         class    = "PRIEST",
         spec     = "DISCIPLINE",
         category = "RAID",
-        icon     = 135926,
+        icon     = 253400,
     },
     [64843] = {
         name     = "천상의 찬가",
@@ -108,7 +108,7 @@ RMT_SPELLS = {
         class    = "MONK",
         spec     = "MISTWEAVER",
         category = "RAID",
-        icon     = 574586,
+        icon     = 1020466,
     },
 
     -- ── 전사 ──────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ RMT_SPELLS = {
         class    = "PRIEST",
         spec     = "DISCIPLINE",
         category = "EXTERNAL",
-        icon     = 135960,
+        icon     = 135936,
     },
 
     -- ── 드루이드 ──────────────────────────────────────────────────
@@ -177,7 +177,7 @@ RMT_SPELLS = {
         class    = "EVOKER",
         spec     = "PRESERVATION",
         category = "EXTERNAL",
-        icon     = 4622427,
+        icon     = 4622478,
     },
 
     -- ── 수도사 ────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ RMT_SPELLS = {
         class    = "MONK",
         spec     = "MISTWEAVER",
         category = "EXTERNAL",
-        icon     = 627487,
+        icon     = 627485,
     },
 }
 
