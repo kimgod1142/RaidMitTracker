@@ -187,6 +187,21 @@ local function MakeRow(parent)
     row.icon:SetPoint("LEFT", row.frame, "LEFT", NAME_W + 4, 0)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
+    -- 아이콘 위 투명 프레임 (마우스 이벤트 수신용)
+    local iconHover = CreateFrame("Frame", nil, row.frame)
+    iconHover:SetAllPoints(row.icon)
+    iconHover:EnableMouse(true)
+    iconHover:SetScript("OnEnter", function(self)
+        if not row.spellID then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetSpellByID(row.spellID)
+        GameTooltip:Show()
+    end)
+    iconHover:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    row.iconHover = iconHover
+
     local barBg = row.frame:CreateTexture(nil, "BACKGROUND")
     barBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
     barBg:SetPoint("LEFT",  row.frame, "LEFT",  NAME_W + ICON_SZ + 8, -(ROW_H - BAR_H) / 2)
@@ -314,6 +329,7 @@ function RMT_UI_RefreshPanel(force)
         row.nameText:SetText(string.format("|cff%02x%02x%02x%s|r", r*255, g*255, b*255, e.player))
         row.bar:SetStatusBarColor(r, g, b, 0.85)
 
+        row.spellID = e.spellID
         row.totalCD = e.totalCD
         row.endTime = e.endTime
 
