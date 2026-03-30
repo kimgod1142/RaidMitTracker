@@ -333,6 +333,24 @@ loader:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
+-- ================================================================
+-- WIPE DETECTION
+-- 전멸 시 모든 쿨타임 초기화 (인카운터 실패 = 쿨타임 리셋)
+-- ================================================================
+local wipeFrame = CreateFrame("Frame")
+wipeFrame:RegisterEvent("ENCOUNTER_END")
+wipeFrame:SetScript("OnEvent", function(_, _, _, _, _, _, success)
+    if success == 1 then return end   -- 클리어는 무시
+    -- 전멸: 모든 endTime 초기화
+    for _, spells in pairs(RMT.roster) do
+        for _, entry in pairs(spells) do
+            entry.endTime = 0
+        end
+    end
+    RMT_UI_RefreshPanel()
+    Log(RMT_L.WIPE_RESET)
+end)
+
 -- 공대 구성 변경 시 자동 보고 (선택적)
 local rosterFrame = CreateFrame("Frame")
 rosterFrame:RegisterEvent("GROUP_ROSTER_UPDATE")

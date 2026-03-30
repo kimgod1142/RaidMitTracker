@@ -15,6 +15,7 @@ local L = {
     HELP            = "Commands: /rmt (check) | /rmt reset | /rmt show | /rmt test",
     LOADED          = "loaded",
     TEST_MODE       = "|cffaaffaa[TEST MODE]|r Dummy data loaded — /rmt reset to clear",
+    WIPE_RESET      = "|cffff4444[WIPE]|r Encounter failed — all cooldowns reset.",
 }
 
 if GetLocale() == "koKR" then
@@ -29,6 +30,7 @@ if GetLocale() == "koKR" then
     L.HELP            = "명령어: /rmt (확인 요청) | /rmt reset | /rmt show | /rmt test"
     L.LOADED          = "로드됨"
     L.TEST_MODE       = "|cffaaffaa[TEST MODE]|r 가짜 데이터 로드 완료 — /rmt reset 으로 초기화"
+    L.WIPE_RESET      = "|cffff4444[전멸]|r 인카운터 실패 — 모든 쿨타임이 초기화되었습니다."
 end
 
 RMT_L = L
