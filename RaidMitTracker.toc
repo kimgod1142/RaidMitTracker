@@ -9,6 +9,7 @@
 ## SavedVariables: RMTdb
 
 libs\LibStub\LibStub.lua
+libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 Locales.lua
 SpellDB.lua
 UI.lua

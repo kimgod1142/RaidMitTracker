@@ -373,14 +373,19 @@ end
 -- ================================================================
 
 -- 설정 변경 시 호출: 행 풀 초기화 후 재생성
-function RMT_UI_ApplySettings()
+-- force = true 이면 공대장 체크 없이 강제 표시 (옵션창 미리보기용)
+function RMT_UI_ApplySettings(force)
     for _, row in ipairs(activeRows) do row.frame:Hide() end
     activeRows = {}
     wipe(rowPool)
     if panel.SetBackdrop then
         panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.96)
     end
-    RMT_UI_RefreshPanel()
+    RMT_UI_RefreshPanel(force)
+end
+
+function RMT_UI_HidePanel()
+    panel:Hide()
 end
 
 function RMT_UI_ShowPanel()
