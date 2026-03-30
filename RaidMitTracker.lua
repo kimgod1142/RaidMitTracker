@@ -89,7 +89,21 @@ end
 local function SendUsed(spellID)
     local ch = GetChannel()
     if not ch then return end
-    C_ChatInfo.SendAddonMessage(PREFIX, "USED:" .. spellID .. ":" .. string.format("%.3f", GetTime()), ch)
+
+    -- 충전 스킬: 충전이 남아있으면 전송 안 함 (아직 사용 가능)
+    local currentCharges, maxCharges, _, chargeDuration = GetSpellCharges(spellID)
+    if maxCharges and maxCharges > 1 then
+        if currentCharges and currentCharges > 0 then return end
+        -- 모든 충전 소모 → 충전 쿨타임으로 보고
+        local actualCD = math.floor(chargeDuration or RMT_SPELLS[spellID].cd)
+        C_ChatInfo.SendAddonMessage(PREFIX, "USED:" .. spellID .. ":" .. string.format("%.3f", GetTime()) .. ":" .. actualCD, ch)
+        return
+    end
+
+    -- 일반 스킬: GetSpellCooldown으로 탤런트 적용된 실제 쿨타임 사용
+    local _, duration = GetSpellCooldown(spellID)
+    local actualCD = (duration and duration > 2) and math.floor(duration) or RMT_SPELLS[spellID].cd
+    C_ChatInfo.SendAddonMessage(PREFIX, "USED:" .. spellID .. ":" .. string.format("%.3f", GetTime()) .. ":" .. actualCD, ch)
 end
 
 -- ================================================================
@@ -123,19 +137,20 @@ local function OnAddonMessage(_, event, prefix, message, _, sender)
         return
     end
 
-    -- USED:spellID:timestamp
-    local usedID, usedTime = message:match("^USED:(%d+):([%d%.]+)$")
+    -- USED:spellID:timestamp:actualCD
+    local usedID, usedTime, usedCD = message:match("^USED:(%d+):([%d%.]+):?(%d*)$")
     if usedID then
         local spellID  = tonumber(usedID)
         local castTime = tonumber(usedTime)
+        local actualCD = tonumber(usedCD)   -- 탤런트 적용된 실제 쿨타임 (없으면 nil)
         if not RMT.roster[name] then RMT.roster[name] = {} end
         if not RMT.roster[name][spellID] then
-            -- 애드온 미설치자가 사용한 경우 — DB에서 cd 가져오기
             local dbEntry = RMT_SPELLS[spellID]
             RMT.roster[name][spellID] = { cd = dbEntry and dbEntry.cd or 180, endTime = 0 }
         end
         local entry   = RMT.roster[name][spellID]
-        entry.endTime = castTime + entry.cd
+        local cd      = actualCD or entry.cd
+        entry.endTime = castTime + cd
         RMT_UI_RefreshPanel()
         return
     end
