@@ -1,16 +1,16 @@
 -- Options.lua
--- 공생기 트래커 자체 설정창
--- /rmt config 또는 패널 우클릭으로 열기
+-- 공생기 트래커 자체 설정창  (/rmt config)
 
-local OPT_W   = 370
-local PAD     = 14
-local TITLE_H = 30
+local OPT_W       = 370
+local PAD         = 14
+local TITLE_H     = 30
+local POPUP_ROW_H = 30
 
--- 바 텍스처 선택지 (WoW 기본 내장 텍스처)
+-- 바 텍스처 선택지
 local BAR_TEXTURES = {
-    { name = "기본 (Default)",  path = "Interface\\TargetingFrame\\UI-StatusBar"              },
-    { name = "레이드 HP",       path = "Interface\\RaidFrame\\Raid-Bar-Hp-Fill"               },
-    { name = "플랫 (Flat)",     path = "Interface\\Buttons\\WHITE8x8"                         },
+    { name = "기본 (Default)",  path = "Interface\\TargetingFrame\\UI-StatusBar"               },
+    { name = "레이드 HP",       path = "Interface\\RaidFrame\\Raid-Bar-Hp-Fill"                },
+    { name = "플랫 (Flat)",     path = "Interface\\Buttons\\WHITE8x8"                          },
     { name = "스킬바 (Skills)", path = "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar" },
 }
 
@@ -26,7 +26,7 @@ end
 -- 옵션 프레임
 -- ================================================================
 local opt = CreateFrame("Frame", "RMT_OptionsFrame", UIParent, "BackdropTemplate")
-opt:SetSize(OPT_W, 100)   -- 높이는 항목 추가 후 자동 설정
+opt:SetSize(OPT_W, 100)
 opt:SetPoint("CENTER")
 opt:SetFrameStrata("DIALOG")
 opt:SetMovable(true)
@@ -57,7 +57,94 @@ closeBtn:SetPoint("TOPRIGHT", opt, "TOPRIGHT", 2, 2)
 closeBtn:SetScript("OnClick", function() opt:Hide() end)
 
 -- ================================================================
--- 레이아웃 헬퍼 (y 누적으로 항목 배치)
+-- 텍스처 드롭다운 팝업 (UIParent 자식 — 옵션창에 클리핑 안 됨)
+-- ================================================================
+local texPopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+texPopup:SetFrameStrata("TOOLTIP")
+texPopup:Hide()
+
+if texPopup.SetBackdrop then
+    texPopup:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 10,
+        insets   = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+    texPopup:SetBackdropColor(0.04, 0.04, 0.08, 0.98)
+    texPopup:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
+end
+
+-- 팝업 외부 클릭 감지 (FULLSCREEN < TOOLTIP 이므로 팝업 버튼은 여전히 클릭 가능)
+local texCatch = CreateFrame("Frame", nil, UIParent)
+texCatch:SetAllPoints(UIParent)
+texCatch:SetFrameStrata("FULLSCREEN")
+texCatch:EnableMouse(true)
+texCatch:Hide()
+texCatch:SetScript("OnMouseDown", function()
+    texPopup:Hide()
+    texCatch:Hide()
+end)
+
+opt:SetScript("OnHide", function()
+    texPopup:Hide()
+    texCatch:Hide()
+end)
+
+-- 팝업 내 선택 하이라이트 참조 (선택 시 갱신용)
+local selHighlights = {}
+local texBtn        -- 드롭다운 버튼 (아래에서 정의, 팝업 OnClick에서 참조)
+
+local function SelectTexture(i)
+    texIdx = i
+    if texBtn then texBtn:SetText(BAR_TEXTURES[i].name .. "  ▼") end
+    if RMTdb  then RMTdb.barTexture = BAR_TEXTURES[i].path end
+    for j, hl in ipairs(selHighlights) do hl:SetShown(j == i) end
+    texPopup:Hide()
+    texCatch:Hide()
+    if RMT_UI_ApplySettings then RMT_UI_ApplySettings() end
+end
+
+-- 팝업 항목 생성
+local texIdx = FindTexIndex()
+for i, tex in ipairs(BAR_TEXTURES) do
+    local row = CreateFrame("Button", nil, texPopup)
+    row:SetHeight(POPUP_ROW_H)
+    row:SetPoint("TOPLEFT",  texPopup, "TOPLEFT",  4, -(4 + (i - 1) * POPUP_ROW_H))
+    row:SetPoint("TOPRIGHT", texPopup, "TOPRIGHT", -4, 0)
+
+    -- 현재 선택 배경
+    local selBg = row:CreateTexture(nil, "BACKGROUND")
+    selBg:SetAllPoints()
+    selBg:SetColorTexture(0.8, 0.5, 0.1, 0.18)
+    selBg:SetShown(i == texIdx)
+    selHighlights[i] = selBg
+
+    -- 호버 하이라이트
+    local hlTex = row:CreateTexture(nil, "HIGHLIGHT")
+    hlTex:SetAllPoints()
+    hlTex:SetColorTexture(1, 1, 1, 0.08)
+
+    -- 텍스처 미리보기 바
+    local preview = CreateFrame("StatusBar", nil, row)
+    preview:SetSize(90, 14)
+    preview:SetPoint("LEFT", row, "LEFT", 4, 0)
+    preview:SetStatusBarTexture(tex.path)
+    preview:SetMinMaxValues(0, 1)
+    preview:SetValue(0.65)
+    preview:SetStatusBarColor(0.3, 0.65, 1, 1)
+
+    -- 텍스처 이름
+    local nameFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameFs:SetPoint("LEFT", preview, "RIGHT", 8, 0)
+    nameFs:SetText(tex.name)
+
+    row:SetScript("OnClick", function() SelectTexture(i) end)
+end
+
+texPopup:SetHeight(4 + #BAR_TEXTURES * POPUP_ROW_H + 4)
+
+-- ================================================================
+-- 레이아웃 헬퍼
 -- ================================================================
 local yPos = -(TITLE_H + 4)
 
@@ -79,7 +166,6 @@ local function AddHeader(text)
     yPos = yPos - 10
 end
 
--- 슬라이더: key = RMTdb의 키 이름
 local sliderRefs = {}
 local function AddSlider(label, minVal, maxVal, step, key, fmt)
     local slider = CreateFrame("Slider", "RMT_Opt_"..key, opt, "OptionsSliderTemplate")
@@ -106,7 +192,6 @@ local function AddSlider(label, minVal, maxVal, step, key, fmt)
     return slider
 end
 
--- 체크박스
 local checkRefs = {}
 local function AddCheckbox(label, key, defaultVal)
     local cb = CreateFrame("CheckButton", "RMT_Opt_"..key, opt, "UICheckButtonTemplate")
@@ -132,47 +217,40 @@ AddSlider("아이콘 크기", 14,  36,  1,    "iconSize",   "%d px")
 AddSlider("폰트 크기",   8,   18,  1,    "fontSize",   "%d")
 AddSlider("행 간격",     0,   12,  1,    "rowSpacing", "%d px")
 
--- 바 텍스처 (이전/다음 버튼)
+-- 바 텍스처 드롭다운
 yPos = yPos - 4
-local texIdx = FindTexIndex()
-
 local texLbl = opt:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 texLbl:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
 texLbl:SetText("바 텍스처")
+yPos = yPos - 18
 
-local texValFs = opt:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-texValFs:SetPoint("LEFT", texLbl, "RIGHT", 10, 0)
-texValFs:SetText(BAR_TEXTURES[texIdx].name)
+texBtn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
+texBtn:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
+texBtn:SetWidth(OPT_W - PAD * 2 - 4)
+texBtn:SetHeight(22)
+texBtn:SetText(BAR_TEXTURES[texIdx].name .. "  ▼")
+texBtn:SetScript("OnClick", function()
+    if texPopup:IsShown() then
+        texPopup:Hide()
+        texCatch:Hide()
+    else
+        texPopup:ClearAllPoints()
+        texPopup:SetPoint("TOPLEFT", texBtn, "BOTTOMLEFT", 0, -2)
+        texPopup:SetWidth(texBtn:GetWidth())
+        texPopup:Show()
+        texPopup:Raise()
+        texCatch:SetFrameLevel(texPopup:GetFrameLevel() - 1)
+        texCatch:Show()
+    end
+end)
 
-local function UpdateTex(dir)
-    texIdx = texIdx + dir
-    if texIdx < 1 then texIdx = #BAR_TEXTURES
-    elseif texIdx > #BAR_TEXTURES then texIdx = 1 end
-    texValFs:SetText(BAR_TEXTURES[texIdx].name)
-    if RMTdb then RMTdb.barTexture = BAR_TEXTURES[texIdx].path end
-    ApplyAndRefresh()
-end
-
-local prevBtn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
-prevBtn:SetSize(26, 20)
-prevBtn:SetText("<")
-prevBtn:SetPoint("LEFT", texValFs, "RIGHT", 8, 0)
-prevBtn:SetScript("OnClick", function() UpdateTex(-1) end)
-
-local nextBtn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
-nextBtn:SetSize(26, 20)
-nextBtn:SetText(">")
-nextBtn:SetPoint("LEFT", prevBtn, "RIGHT", 2, 0)
-nextBtn:SetScript("OnClick", function() UpdateTex(1) end)
-
-yPos = yPos - 32
+yPos = yPos - 28
 
 -- ================================================================
 -- 정렬 섹션
 -- ================================================================
 AddHeader("정렬")
 
--- 라디오 버튼 쌍 (UICheckButtonTemplate로 상호 배타 구현)
 local rbName = CreateFrame("CheckButton", nil, opt, "UICheckButtonTemplate")
 rbName:SetSize(22, 22)
 rbName:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos + 3)
@@ -212,10 +290,15 @@ AddCheckbox("아이콘 마우스오버 툴팁", "tooltipOn", true)
 opt:SetHeight(math.abs(yPos) + PAD + 10)
 
 -- ================================================================
--- 공개 함수: 창 열기 (최신 RMTdb 값으로 동기화)
+-- 공개 함수: 창 열기
 -- ================================================================
 function RMT_Options_Open()
     if not RMTdb then opt:Show(); return end
+
+    -- 그룹 밖이면 테스트 모드 자동 실행 (미리보기용)
+    if not IsInGroup() then
+        SlashCmdList["RMT"]("test")
+    end
 
     -- 슬라이더 동기화
     for key, ref in pairs(sliderRefs) do
@@ -238,9 +321,10 @@ function RMT_Options_Open()
     rbName:SetChecked(mode == "name")
     rbCd:SetChecked(mode == "cd")
 
-    -- 텍스처 동기화
+    -- 텍스처 드롭다운 동기화
     texIdx = FindTexIndex()
-    texValFs:SetText(BAR_TEXTURES[texIdx].name)
+    texBtn:SetText(BAR_TEXTURES[texIdx].name .. "  ▼")
+    for j, hl in ipairs(selHighlights) do hl:SetShown(j == texIdx) end
 
     opt:Show()
     opt:Raise()
