@@ -335,13 +335,9 @@ end)
 
 -- ================================================================
 -- WIPE DETECTION
--- 전멸 시 모든 쿨타임 초기화 (인카운터 실패 = 쿨타임 리셋)
+-- 전멸 감지: 본인 사망 후 3초 뒤 공대원 90% 이상 사망 시 쿨타임 초기화
 -- ================================================================
-local wipeFrame = CreateFrame("Frame")
-wipeFrame:RegisterEvent("ENCOUNTER_END")
-wipeFrame:SetScript("OnEvent", function(_, _, _, _, _, _, success)
-    if success == 1 then return end   -- 클리어는 무시
-    -- 전멸: 모든 endTime 초기화
+local function DoWipeReset()
     for _, spells in pairs(RMT.roster) do
         for _, entry in pairs(spells) do
             entry.endTime = 0
@@ -349,6 +345,26 @@ wipeFrame:SetScript("OnEvent", function(_, _, _, _, _, _, success)
     end
     RMT_UI_RefreshPanel()
     Log(RMT_L.WIPE_RESET)
+end
+
+local wipeFrame = CreateFrame("Frame")
+wipeFrame:RegisterEvent("PLAYER_DEAD")
+wipeFrame:SetScript("OnEvent", function()
+    if not IsInRaid() then return end
+    C_Timer.After(3, function()
+        local total = GetNumGroupMembers()
+        if total == 0 then return end
+        local dead = 0
+        for i = 1, total do
+            if UnitIsDeadOrGhost("raid" .. i) then
+                dead = dead + 1
+            end
+        end
+        -- 공대원 90% 이상 사망 = 전멸로 판정
+        if dead >= total * 0.9 then
+            DoWipeReset()
+        end
+    end)
 end)
 
 -- 공대 구성 변경 시 자동 보고 (선택적)
