@@ -102,18 +102,15 @@ end)
 -- ================================================================
 local HANDLE_THICK = 6   -- 핸들 두께 (px)
 
-local function MakeEdgeHandle(point, cursor, sizeDir)
+local function MakeEdgeHandle(sizeDir)
     local h = CreateFrame("Frame", nil, panel)
     h:SetFrameLevel(panel:GetFrameLevel() + 5)
     h:EnableMouse(true)
-    h:SetScript("OnEnter", function() SetCursor(cursor) end)
-    h:SetScript("OnLeave", function() SetCursor(nil)    end)
     h:SetScript("OnMouseDown", function(self, btn)
         if btn == "LeftButton" then panel:StartSizing(sizeDir) end
     end)
     h:SetScript("OnMouseUp", function()
         panel:StopMovingOrSizing()
-        SetCursor(nil)
         if RMTdb then
             RMTdb.panelSize = { w = panel:GetWidth(), h = panel:GetHeight() }
         end
@@ -122,19 +119,19 @@ local function MakeEdgeHandle(point, cursor, sizeDir)
 end
 
 -- 오른쪽 테두리
-local hRight = MakeEdgeHandle("RIGHT", "SIZE_RIGHT", "RIGHT")
+local hRight = MakeEdgeHandle("RIGHT")
 hRight:SetPoint("TOPRIGHT",    panel, "TOPRIGHT",    0,           -TITLE_H)
 hRight:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0,            HANDLE_THICK)
 hRight:SetWidth(HANDLE_THICK)
 
 -- 아래쪽 테두리
-local hBottom = MakeEdgeHandle("BOTTOM", "SIZE_DOWN", "BOTTOM")
+local hBottom = MakeEdgeHandle("BOTTOM")
 hBottom:SetPoint("BOTTOMLEFT",  panel, "BOTTOMLEFT",  HANDLE_THICK, 0)
 hBottom:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -HANDLE_THICK, 0)
 hBottom:SetHeight(HANDLE_THICK)
 
 -- 오른쪽 아래 모서리 (대각선)
-local hCorner = MakeEdgeHandle("BOTTOMRIGHT", "SIZE_LOWER_RIGHT", "BOTTOMRIGHT")
+local hCorner = MakeEdgeHandle("BOTTOMRIGHT")
 hCorner:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
 hCorner:SetSize(HANDLE_THICK + 4, HANDLE_THICK + 4)
 
@@ -145,11 +142,9 @@ gripTex:SetSize(16, 16)
 gripTex:SetPoint("BOTTOMRIGHT", hCorner, "BOTTOMRIGHT", 0, 0)
 hCorner:SetScript("OnEnter", function()
     gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    SetCursor("SIZE_LOWER_RIGHT")
 end)
 hCorner:SetScript("OnLeave", function()
     gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    SetCursor(nil)
 end)
 
 -- ================================================================
