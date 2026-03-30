@@ -5,9 +5,9 @@ local OPT_W       = 370
 local PAD         = 14
 local TITLE_H     = 30
 local POPUP_ROW_H = 28
-local MAX_POPUP_H = 280   -- 팝업 최대 높이 (초과 시 스크롤)
+local MAX_POPUP_H = 280
 
--- LibSharedMedia 로 텍스처 목록 빌드 (없으면 기본 4개 fallback)
+-- LibSharedMedia 로 텍스처 목록 빌드
 local function GetTextureList()
     local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
     if LSM then
@@ -60,8 +60,12 @@ closeBtn:SetSize(20, 20)
 closeBtn:SetPoint("TOPRIGHT", opt, "TOPRIGHT", 2, 2)
 closeBtn:SetScript("OnClick", function() opt:Hide() end)
 
--- 닫힐 때 그룹 밖이면 테스트 패널도 닫기
 opt:SetScript("OnHide", function()
+    -- 팝업 닫기 (다음에 선언되는 변수 참조 방지 위해 pcall)
+    if _G["RMT_TexPopup"]  then _G["RMT_TexPopup"]:Hide()  end
+    if _G["RMT_SortPopup"] then _G["RMT_SortPopup"]:Hide() end
+    if _G["RMT_TexCatch"]  then _G["RMT_TexCatch"]:Hide()  end
+    -- 그룹 밖이면 테스트 패널 닫기
     if not IsInGroup() then
         RMT.roster = {}
         if RMT_UI_HidePanel then RMT_UI_HidePanel() end
@@ -69,12 +73,26 @@ opt:SetScript("OnHide", function()
 end)
 
 -- ================================================================
+-- Refresh 제어: syncing 플래그 + 80ms throttle
+-- ================================================================
+local syncing      = false
+local refreshTimer = nil
+
+local function ApplyAndRefresh()
+    if syncing then return end
+    if refreshTimer then refreshTimer:Cancel() end
+    refreshTimer = C_Timer.NewTimer(0.08, function()
+        refreshTimer = nil
+        if RMT_UI_ApplySettings then RMT_UI_ApplySettings(true) end
+    end)
+end
+
+-- ================================================================
 -- 텍스처 드롭다운 팝업
 -- ================================================================
-local texPopup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+local texPopup = CreateFrame("Frame", "RMT_TexPopup", UIParent, "BackdropTemplate")
 texPopup:SetFrameStrata("TOOLTIP")
 texPopup:Hide()
-
 if texPopup.SetBackdrop then
     texPopup:SetBackdrop({
         bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -86,7 +104,6 @@ if texPopup.SetBackdrop then
     texPopup:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
 end
 
--- 팝업 스크롤 프레임
 local texScroll = CreateFrame("ScrollFrame", nil, texPopup)
 texScroll:SetPoint("TOPLEFT",     texPopup, "TOPLEFT",     4, -4)
 texScroll:SetPoint("BOTTOMRIGHT", texPopup, "BOTTOMRIGHT", -4,  4)
@@ -100,8 +117,7 @@ end)
 local texContent = CreateFrame("Frame", nil, texScroll)
 texScroll:SetScrollChild(texContent)
 
--- 팝업 외부 클릭 감지
-local texCatch = CreateFrame("Frame", nil, UIParent)
+local texCatch = CreateFrame("Frame", "RMT_TexCatch", UIParent)
 texCatch:SetAllPoints(UIParent)
 texCatch:SetFrameStrata("FULLSCREEN")
 texCatch:EnableMouse(true)
@@ -111,38 +127,24 @@ texCatch:SetScript("OnMouseDown", function()
     texCatch:Hide()
 end)
 
-opt:SetScript("OnHide", function()
-    texPopup:Hide()
-    texCatch:Hide()
-    -- 그룹 밖이면 테스트 패널 닫기
-    if not IsInGroup() then
-        RMT.roster = {}
-        if RMT_UI_HidePanel then RMT_UI_HidePanel() end
-    end
-end)
-
--- ================================================================
--- 텍스처 목록 빌드 (팝업 열 때 동적 생성)
--- ================================================================
-local texList       = {}   -- { name, path }
+local texList       = {}
 local selHighlights = {}
 local texIdx        = 1
-local texBtn                -- 드롭다운 버튼 (아래에서 선언)
+local texBtn        -- 아래에서 선언
 
 local function RebuildTexPopup()
-    -- 기존 항목 제거
     for _, child in pairs({ texContent:GetChildren() }) do child:Hide() end
     texList       = GetTextureList()
     selHighlights = {}
 
-    -- 현재 선택 인덱스 찾기
-    local cur = RMTdb and RMTdb.barTexture or texList[1].path
+    local cur = RMTdb and RMTdb.barTexture or ""
     texIdx = 1
     for i, t in ipairs(texList) do
         if t.path == cur then texIdx = i; break end
     end
 
-    texContent:SetSize(texPopup:GetWidth() - 8, #texList * POPUP_ROW_H)
+    local w = texPopup:GetWidth() - 8
+    texContent:SetSize(w, #texList * POPUP_ROW_H)
 
     for i, tex in ipairs(texList) do
         local row = CreateFrame("Button", nil, texContent)
@@ -152,7 +154,7 @@ local function RebuildTexPopup()
 
         local selBg = row:CreateTexture(nil, "BACKGROUND")
         selBg:SetAllPoints()
-        selBg:SetColorTexture(0.8, 0.5, 0.1, 0.18)
+        selBg:SetColorTexture(0.8, 0.5, 0.1, 0.2)
         selBg:SetShown(i == texIdx)
         selHighlights[i] = selBg
 
@@ -179,24 +181,96 @@ local function RebuildTexPopup()
             for j, hl in ipairs(selHighlights) do hl:SetShown(j == i) end
             texPopup:Hide()
             texCatch:Hide()
-            if RMT_UI_ApplySettings then RMT_UI_ApplySettings(true) end
+            ApplyAndRefresh()
         end)
     end
 
-    -- 팝업 높이 = 항목 수에 따라 결정 (MAX_POPUP_H 초과 시 스크롤)
     local popupH = math.min(#texList * POPUP_ROW_H + 8, MAX_POPUP_H)
     texPopup:SetHeight(popupH)
-    texScroll:SetVerticalScroll(0)
+
+    -- 현재 선택 항목이 보이도록 스크롤
+    local scrollTo = math.max(0, (texIdx - 1) * POPUP_ROW_H - math.floor(MAX_POPUP_H / 2))
+    texScroll:SetVerticalScroll(scrollTo)
+end
+
+-- ================================================================
+-- 정렬 드롭다운 팝업
+-- ================================================================
+local SORT_OPTIONS = {
+    { key = "name", label = "이름순 (가나다 / ABC)" },
+    { key = "cd",   label = "쿨타임 낮은 순"       },
+}
+
+local sortPopup = CreateFrame("Frame", "RMT_SortPopup", UIParent, "BackdropTemplate")
+sortPopup:SetFrameStrata("TOOLTIP")
+sortPopup:Hide()
+if sortPopup.SetBackdrop then
+    sortPopup:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 10,
+        insets   = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
+    sortPopup:SetBackdropColor(0.04, 0.04, 0.08, 0.98)
+    sortPopup:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
+end
+sortPopup:SetSize(200, #SORT_OPTIONS * POPUP_ROW_H + 8)
+
+local sortCatch = CreateFrame("Frame", nil, UIParent)
+sortCatch:SetAllPoints(UIParent)
+sortCatch:SetFrameStrata("FULLSCREEN")
+sortCatch:EnableMouse(true)
+sortCatch:Hide()
+sortCatch:SetScript("OnMouseDown", function()
+    sortPopup:Hide()
+    sortCatch:Hide()
+end)
+
+local sortSelHls = {}
+local sortBtn   -- 아래에서 선언
+
+local function GetSortIdx()
+    local mode = RMTdb and RMTdb.sortMode or "name"
+    for i, s in ipairs(SORT_OPTIONS) do
+        if s.key == mode then return i end
+    end
+    return 1
+end
+
+for i, opt_sort in ipairs(SORT_OPTIONS) do
+    local row = CreateFrame("Button", nil, sortPopup)
+    row:SetHeight(POPUP_ROW_H)
+    row:SetPoint("TOPLEFT",  sortPopup, "TOPLEFT",  4, -(4 + (i - 1) * POPUP_ROW_H))
+    row:SetPoint("TOPRIGHT", sortPopup, "TOPRIGHT", -4, 0)
+
+    local selBg = row:CreateTexture(nil, "BACKGROUND")
+    selBg:SetAllPoints()
+    selBg:SetColorTexture(0.8, 0.5, 0.1, 0.2)
+    selBg:SetShown(i == GetSortIdx())
+    sortSelHls[i] = selBg
+
+    local hlTex = row:CreateTexture(nil, "HIGHLIGHT")
+    hlTex:SetAllPoints()
+    hlTex:SetColorTexture(1, 1, 1, 0.08)
+
+    local nameFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameFs:SetPoint("LEFT", row, "LEFT", 8, 0)
+    nameFs:SetText(opt_sort.label)
+
+    row:SetScript("OnClick", function()
+        if RMTdb then RMTdb.sortMode = opt_sort.key end
+        for j, hl in ipairs(sortSelHls) do hl:SetShown(j == i) end
+        if sortBtn then sortBtn:SetText(opt_sort.label .. "  ▼") end
+        sortPopup:Hide()
+        sortCatch:Hide()
+        ApplyAndRefresh()
+    end)
 end
 
 -- ================================================================
 -- 레이아웃 헬퍼
 -- ================================================================
 local yPos = -(TITLE_H + 4)
-
-local function ApplyAndRefresh()
-    if RMT_UI_ApplySettings then RMT_UI_ApplySettings(true) end  -- force=true: 공대장 체크 없이 갱신
-end
 
 local function AddHeader(text)
     yPos = yPos - 8
@@ -247,10 +321,27 @@ local function AddCheckbox(label, key, defaultVal)
     cb.text:SetFontObject(GameFontNormalSmall)
     cb:SetScript("OnClick", function(self)
         if RMTdb then RMTdb[key] = self:GetChecked() end
+        ApplyAndRefresh()
     end)
     checkRefs[key] = { widget = cb, default = defaultVal }
     yPos = yPos - 28
     return cb
+end
+
+local function AddDropdownBtn(label, getTextFn, onClickFn)
+    local lbl = opt:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lbl:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
+    lbl:SetText(label)
+    yPos = yPos - 18
+
+    local btn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
+    btn:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
+    btn:SetWidth(OPT_W - PAD * 2 - 4)
+    btn:SetHeight(22)
+    btn:SetText(getTextFn() .. "  ▼")
+    btn:SetScript("OnClick", onClickFn)
+    yPos = yPos - 28
+    return btn
 end
 
 -- ================================================================
@@ -259,78 +350,70 @@ end
 AddHeader("외관")
 AddSlider("배경 투명도", 0.1, 1.0, 0.05, "bgAlpha",    "%.2f")
 AddSlider("행 높이",     20,  44,  1,    "rowHeight",  "%d px")
+AddSlider("바 두께",     4,   36,  1,    "barHeight",  "%d px")
 AddSlider("아이콘 크기", 14,  36,  1,    "iconSize",   "%d px")
 AddSlider("폰트 크기",   8,   18,  1,    "fontSize",   "%d")
 AddSlider("행 간격",     0,   12,  1,    "rowSpacing", "%d px")
 
 -- 바 텍스처 드롭다운
-yPos = yPos - 4
-local texLbl = opt:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-texLbl:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
-texLbl:SetText("바 텍스처")
-yPos = yPos - 18
-
-texBtn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
-texBtn:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
-texBtn:SetWidth(OPT_W - PAD * 2 - 4)
-texBtn:SetHeight(22)
-texBtn:SetText("선택...")
-texBtn:SetScript("OnClick", function()
-    if texPopup:IsShown() then
-        texPopup:Hide()
-        texCatch:Hide()
-    else
-        RebuildTexPopup()
-        texPopup:ClearAllPoints()
-        texPopup:SetPoint("TOPLEFT", texBtn, "BOTTOMLEFT", 0, -2)
-        texPopup:SetWidth(texBtn:GetWidth())
-        texContent:SetWidth(texBtn:GetWidth() - 8)
-        texPopup:Show()
-        texPopup:Raise()
-        texCatch:SetFrameLevel(texPopup:GetFrameLevel() - 1)
-        texCatch:Show()
+texBtn = AddDropdownBtn("바 텍스처",
+    function()
+        local cur = RMTdb and RMTdb.barTexture or ""
+        local list = GetTextureList()
+        for _, t in ipairs(list) do
+            if t.path == cur then return t.name end
+        end
+        return "선택..."
+    end,
+    function(self)
+        if texPopup:IsShown() then
+            texPopup:Hide(); texCatch:Hide()
+        else
+            RebuildTexPopup()
+            texPopup:ClearAllPoints()
+            texPopup:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+            texPopup:SetWidth(self:GetWidth())
+            texContent:SetWidth(self:GetWidth() - 8)
+            texPopup:Show(); texPopup:Raise()
+            texCatch:SetFrameLevel(texPopup:GetFrameLevel() - 1)
+            texCatch:Show()
+        end
     end
-end)
-
-yPos = yPos - 28
+)
 
 -- ================================================================
 -- 정렬 섹션
 -- ================================================================
 AddHeader("정렬")
 
-local rbName = CreateFrame("CheckButton", nil, opt, "UICheckButtonTemplate")
-rbName:SetSize(22, 22)
-rbName:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos + 3)
-rbName.text:SetText("이름순 (가나다 / ABC)")
-rbName.text:SetFontObject(GameFontNormalSmall)
-yPos = yPos - 28
-
-local rbCd = CreateFrame("CheckButton", nil, opt, "UICheckButtonTemplate")
-rbCd:SetSize(22, 22)
-rbCd:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos + 3)
-rbCd.text:SetText("쿨타임 낮은 순")
-rbCd.text:SetFontObject(GameFontNormalSmall)
-yPos = yPos - 28
-
-rbName:SetScript("OnClick", function()
-    rbName:SetChecked(true)
-    rbCd:SetChecked(false)
-    if RMTdb then RMTdb.sortMode = "name" end
-    ApplyAndRefresh()
-end)
-rbCd:SetScript("OnClick", function()
-    rbCd:SetChecked(true)
-    rbName:SetChecked(false)
-    if RMTdb then RMTdb.sortMode = "cd" end
-    ApplyAndRefresh()
-end)
+sortBtn = AddDropdownBtn("정렬 기준",
+    function()
+        local idx = GetSortIdx()
+        return SORT_OPTIONS[idx].label
+    end,
+    function(self)
+        if sortPopup:IsShown() then
+            sortPopup:Hide(); sortCatch:Hide()
+        else
+            -- 현재 선택 하이라이트 갱신
+            local cur = GetSortIdx()
+            for j, hl in ipairs(sortSelHls) do hl:SetShown(j == cur) end
+            sortPopup:ClearAllPoints()
+            sortPopup:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+            sortPopup:SetWidth(self:GetWidth())
+            sortPopup:Show(); sortPopup:Raise()
+            sortCatch:SetFrameLevel(sortPopup:GetFrameLevel() - 1)
+            sortCatch:Show()
+        end
+    end
+)
 
 -- ================================================================
 -- 기능 섹션
 -- ================================================================
 AddHeader("기능")
-AddCheckbox("아이콘 마우스오버 툴팁", "tooltipOn", true)
+AddCheckbox("아이콘 표시",             "showIcon",  true)
+AddCheckbox("아이콘 마우스오버 툴팁",  "tooltipOn", true)
 
 -- ================================================================
 -- 프레임 최종 높이 확정
@@ -343,41 +426,41 @@ opt:SetHeight(math.abs(yPos) + PAD + 10)
 function RMT_Options_Open()
     if not RMTdb then opt:Show(); return end
 
-    -- 그룹 밖이면 테스트 모드 자동 실행
-    if not IsInGroup() then
-        SlashCmdList["RMT"]("test")
-    end
+    -- syncing=true → slider SetValue가 ApplyAndRefresh 트리거하지 않도록
+    syncing = true
 
-    -- 슬라이더 동기화
     for key, ref in pairs(sliderRefs) do
         local val = RMTdb[key]
-        if val then
+        if val ~= nil then
             ref.widget:SetValue(val)
             ref.sync(val)
         end
     end
-
-    -- 체크박스 동기화
     for key, ref in pairs(checkRefs) do
         local val = RMTdb[key]
         if val == nil then val = ref.default end
         ref.widget:SetChecked(val)
     end
 
-    -- 정렬 라디오 동기화
-    local mode = RMTdb.sortMode or "name"
-    rbName:SetChecked(mode == "name")
-    rbCd:SetChecked(mode == "cd")
+    syncing = false
 
-    -- 텍스처 버튼 텍스트 동기화
-    local cur = RMTdb.barTexture or ""
-    local curName = "선택..."
+    -- 드롭다운 버튼 텍스트 동기화
+    local curTex = RMTdb.barTexture or ""
+    local texName = "선택..."
     local list = GetTextureList()
     for _, t in ipairs(list) do
-        if t.path == cur then curName = t.name; break end
+        if t.path == curTex then texName = t.name; break end
     end
-    texBtn:SetText(curName .. "  ▼")
+    texBtn:SetText(texName .. "  ▼")
+    sortBtn:SetText(SORT_OPTIONS[GetSortIdx()].label .. "  ▼")
 
     opt:Show()
     opt:Raise()
+
+    -- sync 완료 후 테스트 모드 실행 (그룹 밖일 때만)
+    if not IsInGroup() then
+        C_Timer.After(0.05, function()
+            SlashCmdList["RMT"]("test")
+        end)
+    end
 end

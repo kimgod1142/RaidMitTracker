@@ -166,12 +166,14 @@ local rowPool    = {}
 local activeRows = {}
 
 local function MakeRow(parent)
-    local rowH   = (RMTdb and RMTdb.rowHeight) or ROW_H
-    local iconSz = (RMTdb and RMTdb.iconSize)  or ICON_SZ
-    local fSize  = (RMTdb and RMTdb.fontSize)  or 11
-    local barH   = math.max(8, math.floor(rowH * 0.57))
-    local texPath = (RMTdb and RMTdb.barTexture) or "Interface\\TargetingFrame\\UI-StatusBar"
+    local rowH     = (RMTdb and RMTdb.rowHeight) or ROW_H
+    local iconSz   = (RMTdb and RMTdb.iconSize)  or ICON_SZ
+    local fSize    = (RMTdb and RMTdb.fontSize)  or 11
+    local barH     = (RMTdb and RMTdb.barHeight) or BAR_H
+    local showIcon = (RMTdb == nil) or (RMTdb.showIcon ~= false)
+    local texPath  = (RMTdb and RMTdb.barTexture) or "Interface\\TargetingFrame\\UI-StatusBar"
     local fontPath = GameFontNormalSmall:GetFont()
+    local barLeft  = showIcon and (NAME_W + iconSz + 8) or (NAME_W + 4)
 
     local row = {}
     row.frame = CreateFrame("Frame", nil, parent)
@@ -194,11 +196,12 @@ local function MakeRow(parent)
     row.icon:SetSize(iconSz, iconSz)
     row.icon:SetPoint("LEFT", row.frame, "LEFT", NAME_W + 4, 0)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon:SetShown(showIcon)
 
     -- 아이콘 위 투명 프레임 (마우스 이벤트 수신용)
     local iconHover = CreateFrame("Frame", nil, row.frame)
     iconHover:SetAllPoints(row.icon)
-    iconHover:EnableMouse(true)
+    iconHover:EnableMouse(showIcon)
     iconHover:SetScript("OnEnter", function(self)
         if not row.spellID then return end
         if RMTdb and RMTdb.tooltipOn == false then return end
@@ -213,8 +216,8 @@ local function MakeRow(parent)
 
     local barBg = row.frame:CreateTexture(nil, "BACKGROUND")
     barBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-    barBg:SetPoint("LEFT",  row.frame, "LEFT",  NAME_W + iconSz + 8, -(rowH - barH) / 2)
-    barBg:SetPoint("RIGHT", row.frame, "RIGHT", 0,                   -(rowH - barH) / 2)
+    barBg:SetPoint("LEFT",  row.frame, "LEFT",  barLeft, -(rowH - barH) / 2)
+    barBg:SetPoint("RIGHT", row.frame, "RIGHT", 0,       -(rowH - barH) / 2)
     barBg:SetHeight(barH)
     row.barBg = barBg
 
