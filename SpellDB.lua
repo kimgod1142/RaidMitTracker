@@ -86,7 +86,7 @@ RMT_SPELLS = {
         class    = "EVOKER",
         spec     = "PRESERVATION",
         category = "RAID",
-        icon     = 4622465,
+        icon     = 4622474,
     },
 
     -- ── 드루이드 ──────────────────────────────────────────────────
