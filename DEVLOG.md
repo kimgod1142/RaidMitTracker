@@ -109,13 +109,105 @@ ProcessUsed(name, ...)
 
 ---
 
+#### 🔴 SetCursor — 리사이즈 핸들에서 검은 정사각형 커서 표시
+- **에러 위치**: `UI.lua` — `MakeEdgeHandle()` OnEnter/OnLeave
+- **원인**: `SetCursor("SIZE_RIGHT")` 등 커서 변경 API가 TWW에서 제거됨. 호출 시 검은 정사각형이 마우스 커서 위치에 나타남
+- **수정**: `SetCursor` 호출 전체 제거. 리사이즈 핸들 함수 시그니처도 단순화 (`cursor` 파라미터 제거)
+
+---
+
 ### 기능 추가
+
+#### 전멸 감지 — DoWipeReset()
+- `PLAYER_REGEN_DISABLED` / `BOSS_KILL` / `PLAYER_REGEN_ENABLED` 3개 이벤트 조합으로 전멸/소프트리셋 감지
+- 전투 진입 시 `wasInEncounter = true`, 보스 킬 시 `bossKilled = true`
+- 전투 종료 (`PLAYER_REGEN_ENABLED`) 시 `wasInEncounter == true && bossKilled == false` → 전멸로 판정
+- `DoWipeReset()`: 전 공대원의 모든 스킬 `endTime = 0` 초기화 후 패널 갱신
+- `Locales.lua`에 `WIPE_RESET` 키 추가 (EN / KR)
+
+> 참고: `ENCOUNTER_END` (보호된 이벤트, 애드온 차단)와 `PLAYER_DEAD` (솔로 죽음도 감지되는 오탐 위험)을 거쳐 최종 BOSS_KILL 기반으로 확정
+
+---
+
+#### Options.lua — 설정창 신규 추가 (469줄)
+초기 배포 시 없던 설정창이 통째로 추가됨. (기존 "슬라이더 범위 수정"은 이 파일의 수정이 아닌 신규 생성)
+
+**시각 설정 (Visual)**
+| 슬라이더 | 범위 | 기본값 |
+|---|---|---|
+| 배경 투명도 (bgAlpha) | 0.1 ~ 1.0 | 0.55 |
+| 행 높이 (rowHeight) | 20 ~ 68 px | 44 px |
+| 바 두께 (barHeight) | 4 ~ 68 px | 36 px |
+| 아이콘 크기 (iconSize) | 14 ~ 58 px | 36 px |
+| 폰트 크기 (fontSize) | 8 ~ 28 pt | 18 |
+| 행 간격 (rowSpacing) | 0 ~ 24 px | 0 px |
+
+**텍스처 드롭다운**: LibSharedMedia-3.0 통합 → 게임 내 상태바 텍스처 목록, 스크롤 지원, 선택 시 미리보기 표시
+
+**정렬 모드 드롭다운**: `이름순 (name)` / `쿨타임 남은순 (cd)` 선택
+
+**토글 옵션**
+- `showIcon`: 스킬 아이콘 표시/숨기기 (숨기면 바가 왼쪽으로 확장)
+- `tooltipOn`: 아이콘 호버 시 스펠 툴팁 표시/숨기기
+
+**UX**
+- ESC 키로 닫기 (`UISpecialFrames` 등록)
+- 옵션 변경 시 80ms 디바운싱 후 패널 즉시 갱신
+- 설정창 열릴 때 자동 test mode 진입 (미리보기용)
+
+---
+
+#### 미니맵 버튼 (LibDBIcon)
+- 미니맵 버튼 추가 — 좌클릭: `/rmt show`, 우클릭: 설정창 열기
+- 버튼 위치 `RMTdb.minimap`에 저장 (드래그 이동 가능)
+- 라이브러리 3개 추가:
+  - `libs/LibSharedMedia-3.0/LibSharedMedia-3.0.lua` — 텍스처/폰트 레지스트리
+  - `libs/LibDataBroker-1.1/LibDataBroker-1.1.lua` — 미니맵 데이터 소스 표준
+  - `libs/LibDBIcon-1.0/LibDBIcon-1.0.lua` — 미니맵 버튼 생성/관리
+
+---
+
+#### 스펠 툴팁 (UI.lua)
+- 아이콘 위에 투명 히트박스 프레임 (`iconHover`) 추가
+- 마우스 호버 시 `GameTooltip:SetSpellByID(spellID)` — 게임 내 공식 스펠 정보 표시
+- `tooltipOn == false`이면 비활성화 (Options에서 제어)
+
+---
+
+#### USED 메시지 포맷 변경
+- 기존: `USED:spellID:timestamp`
+- 변경: `USED:spellID:timestamp:actualCD`
+- 탤런트로 감소된 실제 쿨타임 포함 → 수신 공대원도 정확한 쿨타임으로 계산 가능
+
+---
+
+#### 충전 스킬 처리 (희생의 축복 등)
+- 충전이 남아있으면 스킬 사용 이벤트 무시 (아직 준비됨)
+- 마지막 충전 소모 시에만 쿨타임 시작
+- `chargeDuration` 기반 실제 충전 복구 시간 사용
+
+---
 
 #### `/rmt test` — 내 캐릭터 실제 스킬 추가
 - 기존 랜덤 샘플 캐릭터 유지 + 현재 캐릭터의 실제 보유 공생기 스킬 추가 표시
 - `IsPlayerSpell(spellID)`로 보유 여부 확인
 - `GetCooldown(spellID)`로 실제 쿨타임 잔여시간 반영
 - 해당 직업에 공생기 없으면 행 자체 생략
+
+---
+
+### SpellDB 아이콘 ID 수정
+
+TWW 패치에서 스프라이트시트 재구성으로 리소스 ID 변경된 스킬 8개 수정:
+
+| 스펠 ID | 스킬명 | 이전 아이콘 | 새 아이콘 |
+|---|---|---|---|
+| 62618 | Power Word: Barrier | 135926 | 253400 |
+| 363534 | Rewind | 4622465 | 4622474 |
+| 297850 | Revival | 574586 | 1020466 |
+| 33206 | Pain Suppression | 135960 | 135936 |
+| 357170 | Time Dilation | 4622427 | 4622478 |
+| 116849 | Life Cocoon | 627487 | 627485 |
 
 ---
 
@@ -137,8 +229,15 @@ ProcessUsed(name, ...)
 ---
 
 ### 변경된 파일
-- `RaidMitTracker.lua` — GetCooldown 헬퍼, ProcessUsed 구조, RegisterFrames, 기본값, test mode
-- `Options.lua` — 슬라이더 범위 수정
+- `RaidMitTracker.lua` — GetCooldown 헬퍼, ProcessUsed 구조, RegisterFrames, 충전 스킬, USED 포맷, 전멸 감지, test mode
+- `UI.lua` — SetCursor 제거, MakeRow 동적화(rowHeight/iconSize/barHeight/barTexture), 스펠 툴팁, 정렬 모드, 아이콘 토글, 행 간격
+- `SpellDB.lua` — 아이콘 ID 6개 수정
+- `Locales.lua` — WIPE_RESET 키 추가
+- `Options.lua` — **신규 생성** (469줄, 설정창 전체)
+- `RaidMitTracker.toc` — 라이브러리 3개 + Options.lua 로드 순서 추가
+- `libs/LibSharedMedia-3.0/LibSharedMedia-3.0.lua` — **신규**
+- `libs/LibDataBroker-1.1/LibDataBroker-1.1.lua` — **신규**
+- `libs/LibDBIcon-1.0/LibDBIcon-1.0.lua` — **신규**
 
 ---
 
@@ -220,8 +319,12 @@ RaidMitTracker/
 ├── RaidMitTracker.lua        ← 통신 + 이벤트 + 슬래시 커맨드
 ├── SpellDB.lua               ← 스킬 테이블 (name_en 포함)
 ├── UI.lua                    ← 패널 UI
+├── Options.lua               ← 설정창 (Session 2 추가)
 ├── Locales.lua               ← EN/KR 로케일
 ├── libs/LibStub/LibStub.lua
+├── libs/LibSharedMedia-3.0/  ← Session 2 추가
+├── libs/LibDataBroker-1.1/   ← Session 2 추가
+├── libs/LibDBIcon-1.0/       ← Session 2 추가 (미니맵 버튼)
 ├── README.md                 ← GitHub 배포용
 ├── DEVLOG.md                 ← 이 파일
 └── curseforge-description.html ← CurseForge 업로드용
@@ -232,6 +335,18 @@ RaidMitTracker/
 RMTdb = {
     panelPos  = { pt, rpt, x, y },   -- 패널 위치
     panelSize = { w, h },            -- 패널 크기
+    -- Session 2 추가
+    bgAlpha     = 0.55,
+    rowHeight   = 44,
+    barHeight   = 36,
+    iconSize    = 36,
+    fontSize    = 18,
+    rowSpacing  = 0,
+    barTexture  = "...",
+    sortMode    = "name",
+    showIcon    = true,
+    tooltipOn   = true,
+    minimap     = { minimapPos = 200 },
 }
 ```
 
