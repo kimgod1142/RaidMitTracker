@@ -51,11 +51,17 @@ local function GetCooldown(spellID)
 end
 
 -- 본인이 보유한 공생기 스펠 ID 목록 수집
+-- 쿨 중이면 실제 탤런트 적용 CD, 준비됐으면 DB 기본값 사용
 local function CollectMySpells()
     local result = {}
     for spellID, data in pairs(RMT_SPELLS) do
         if IsPlayerSpell(spellID) then
-            result[#result + 1] = spellID .. ":" .. data.cd
+            local ok, cd = pcall(function()
+                local _, duration = GetCooldown(spellID)
+                return (duration and duration > 2) and math.floor(duration) or nil
+            end)
+            local actualCD = (ok and cd) or data.cd
+            result[#result + 1] = spellID .. ":" .. actualCD
         end
     end
     return result
