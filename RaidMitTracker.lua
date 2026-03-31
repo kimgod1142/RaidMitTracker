@@ -118,15 +118,30 @@ local function SendUsed(spellID)
     local name = UnitName("player")
 
     -- TWW: GetSpellCharges → C_Spell.GetSpellCharges 로 이동됨 (하위 호환 처리)
-    local getCharges = (C_Spell and C_Spell.GetSpellCharges) or (type(GetSpellCharges) == "function" and GetSpellCharges)
-
+    -- ⚠️ C_Spell.GetSpellCharges는 테이블 반환 가능성 있음 (C_Spell.GetSpellCooldown과 동일 패턴)
+    --    테이블/다중반환 양쪽 모두 처리
     local actualCD
-    -- 충전 스킬: 충전이 남아있으면 아직 사용 가능 → 무시
-    if getCharges then
-        local currentCharges, maxCharges, _, chargeDuration = getCharges(spellID)
+    do
+        local currentCharges, maxCharges, chargeDuration
+        if C_Spell and C_Spell.GetSpellCharges then
+            local r1, r2, r3, r4 = C_Spell.GetSpellCharges(spellID)
+            if type(r1) == "table" then
+                -- TWW 테이블 반환 형식: { currentCharges, maxCharges, chargeStartTime, chargeDuration }
+                currentCharges = r1.currentCharges
+                maxCharges     = r1.maxCharges
+                chargeDuration = r1.chargeDuration
+            else
+                -- 구버전 다중 반환 형식
+                currentCharges, maxCharges, _, chargeDuration = r1, r2, r3, r4
+            end
+        elseif type(GetSpellCharges) == "function" then
+            currentCharges, maxCharges, _, chargeDuration = GetSpellCharges(spellID)
+        end
+
+        -- 충전 스킬: 충전이 남아있으면 아직 사용 가능 → 무시
         if maxCharges and maxCharges > 1 then
             if currentCharges and currentCharges > 0 then return end
-            actualCD = math.floor(chargeDuration or RMT_SPELLS[spellID].cd)
+            actualCD = chargeDuration and math.floor(chargeDuration) or RMT_SPELLS[spellID].cd
         end
     end
 
@@ -419,7 +434,8 @@ end
 -- ================================================================
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
-loader:RegisterEvent("CHAT_MSG_ADDON")
+-- ⚠️ CHAT_MSG_ADDON은 ADDON_LOADED 핸들러 안에서 등록
+--    메인 청크에서 RegisterEvent하면 다른 애드온에 의해 taint → 수신 불가
 loader:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local name = ...
@@ -427,6 +443,7 @@ loader:SetScript("OnEvent", function(self, event, ...)
         self:UnregisterEvent("ADDON_LOADED")
 
         C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
+        self:RegisterEvent("CHAT_MSG_ADDON")   -- ← ADDON_LOADED 이후 안전하게 등록
 
         RMTdb  = RMTdb or {}
         RMT.db = RMTdb

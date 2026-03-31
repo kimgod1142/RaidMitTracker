@@ -56,7 +56,7 @@ tinsert(UISpecialFrames, "RMT_OptionsFrame")
 
 local titleFs = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 titleFs:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, -9)
-titleFs:SetText("|cffff9900공생기 트래커|r  설정")
+titleFs:SetText("|cffff9900" .. (RMT_L and RMT_L.TITLE or "Raid Mit Tracker") .. "|r  " .. (GetLocale() == "koKR" and "설정" or "Settings"))
 
 local closeBtn = CreateFrame("Button", nil, opt, "UIPanelCloseButton")
 closeBtn:SetSize(20, 20)

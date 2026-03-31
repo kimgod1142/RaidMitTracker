@@ -76,7 +76,7 @@ if panel.SetBackdrop then
         edgeSize = 12,
         insets   = { left = 3, right = 3, top = 3, bottom = 3 },
     })
-    panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.96)
+    panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.55)
     panel:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
 end
 
@@ -382,7 +382,7 @@ function RMT_UI_ApplySettings(force)
     activeRows = {}
     wipe(rowPool)
     if panel.SetBackdrop then
-        panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.96)
+        panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.55)
     end
     RMT_UI_RefreshPanel(force)
 end
@@ -415,6 +415,10 @@ function RMT_UI_Init()
                 math.max(MIN_W, RMTdb.panelSize.w),
                 math.max(MIN_H, RMTdb.panelSize.h)
             )
+        end
+        -- 저장된 bgAlpha 복원 (UI.lua 로드 시 RMTdb가 nil이라 못 읽었던 값)
+        if panel.SetBackdrop and RMTdb.bgAlpha then
+            panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb.bgAlpha)
         end
     end
 end
