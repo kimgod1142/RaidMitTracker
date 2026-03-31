@@ -1,5 +1,7 @@
 package-as: RaidMitTracker
 
+# 배포 zip에서 제외할 파일 목록
+# .github/workflows/release.yml 의 zip --exclude 목록과 동기화 유지
 ignore:
   - DEVLOG.md
   - CHANGELOG.md

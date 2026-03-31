@@ -2,6 +2,9 @@ name: Release
 
 # v* 태그 push 시 자동 실행
 # 예: git tag v1.2.0 && git push origin v1.2.0
+#
+# 결과물: GitHub Release 페이지에 RaidMitTracker-vX.X.X.zip 첨부
+# CurseForge 업로드는 zip 파일을 다운받아 수동으로 올린다.
 on:
   push:
     tags:
@@ -10,17 +13,39 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # GitHub Release 생성 권한
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # BigWigs packager 스크립트를 직접 실행
-      # .pkgmeta 설정 기반으로 zip 패키징 → CurseForge 업로드 → GitHub Release 생성
-      # 문서: https://github.com/BigWigs/packager
-      - name: Package and upload
-        env:
-          CF_API_KEY: ${{ secrets.CF_API_KEY }}
-          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
-          CURSE_PROJECT_ID: ${{ vars.CURSE_PROJECT_ID }}
+      # 배포에 불필요한 파일을 제외하고 zip 패키징
+      # .pkgmeta ignore 목록과 동기화 유지
+      - name: Build zip
         run: |
-          curl -s https://raw.githubusercontent.com/BigWigs/packager/release/release.sh | bash
+          VERSION="${GITHUB_REF_NAME}"
+          ZIP_NAME="RaidMitTracker-${VERSION}.zip"
+
+          zip -r "${ZIP_NAME}" . \
+            --exclude "*.git*" \
+            --exclude ".github/*" \
+            --exclude ".pkgmeta" \
+            --exclude "DEVLOG.md" \
+            --exclude "CHANGELOG.md" \
+            --exclude "curseforge-description.html"
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+
+      # CHANGELOG.md에서 현재 버전 섹션만 추출해서 릴리즈 노트로 사용
+      - name: Extract release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"   # v1.1.0 → 1.1.0
+          awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found" CHANGELOG.md \
+            > release_notes.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.txt
+          files: ${{ env.ZIP_NAME }}
