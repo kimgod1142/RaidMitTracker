@@ -37,9 +37,9 @@ local function GetChannel()
     return nil
 end
 
--- TWW 호환 쿨타임 조회
+-- WoW 호환 쿨타임 조회
 -- 구버전: GetSpellCooldown(id) → start, duration
--- TWW:    C_Spell.GetSpellCooldown(id) → { startTime, duration, ... }
+-- WoW:    C_Spell.GetSpellCooldown(id) → { startTime, duration, ... }
 local function GetCooldown(spellID)
     if C_Spell and C_Spell.GetSpellCooldown then
         local info = C_Spell.GetSpellCooldown(spellID)
@@ -117,7 +117,7 @@ local function SendUsed(spellID)
     local now  = GetTime()
     local name = UnitName("player")
 
-    -- TWW: GetSpellCharges → C_Spell.GetSpellCharges 로 이동됨 (하위 호환 처리)
+    -- WoW: GetSpellCharges → C_Spell.GetSpellCharges 로 이동됨 (하위 호환 처리)
     -- ⚠️ C_Spell.GetSpellCharges는 테이블 반환 가능성 있음 (C_Spell.GetSpellCooldown과 동일 패턴)
     --    테이블/다중반환 양쪽 모두 처리
     local actualCD
@@ -126,7 +126,7 @@ local function SendUsed(spellID)
         if C_Spell and C_Spell.GetSpellCharges then
             local r1, r2, r3, r4 = C_Spell.GetSpellCharges(spellID)
             if type(r1) == "table" then
-                -- TWW 테이블 반환 형식: { currentCharges, maxCharges, chargeStartTime, chargeDuration }
+                -- WoW 테이블 반환 형식: { currentCharges, maxCharges, chargeStartTime, chargeDuration }
                 currentCharges = r1.currentCharges
                 maxCharges     = r1.maxCharges
                 chargeDuration = r1.chargeDuration
@@ -237,7 +237,7 @@ local function RegisterFrames()
     end)
 
     -- 공대원 스킬 사용 감지 — UNIT_SPELLCAST_SUCCEEDED 기반
-    -- COMBAT_LOG_EVENT_UNFILTERED는 TWW 12.0에서 restricted event가 되어
+    -- COMBAT_LOG_EVENT_UNFILTERED는 WoW 12.0에서 restricted event가 되어
     -- RegisterEvent 호출 시 ADDON_ACTION_FORBIDDEN 발생 → unit event 방식으로 교체
     local memberFrame = CreateFrame("Frame")
     local memberUnits = { "party1", "party2", "party3", "party4" }
