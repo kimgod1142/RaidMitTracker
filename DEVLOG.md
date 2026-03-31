@@ -2,6 +2,167 @@
 
 ---
 
+## v1.1.0 — Session 3 (2026-04-01)
+
+### 개요
+M+ 실전 테스트에서 발생한 에러 3종 수정, 크로스렐름 지원, 탤런트 쿨감 정보 정리.
+BugSack 에러 전부 해소 + 설정창에 사용자 안내 섹션 추가.
+
+---
+
+### 수정된 버그
+
+#### 🔴 `attempt to compare local 'duration' (secret number value)`
+- **에러 위치**: `SendUsed()` line 137 — `duration > 2` 비교 시
+- **발생 조건**: M+ 전투 중 본인 스킬 사용
+- **원인**: WoW 12.0 Secret Value 제약 — 전투 중 `C_Spell.GetSpellCooldown()` 반환값이 taint된 secret value로 마킹됨. 비교/연산 자체가 에러
+- **수정**: `pcall`로 감싸 실패 시 DB 하드코딩 기본값으로 폴백
+
+```lua
+-- Before
+local _, duration = GetCooldown(spellID)
+actualCD = (duration and duration > 2) and math.floor(duration) or RMT_SPELLS[spellID].cd
+
+-- After
+local ok, cd = pcall(function()
+    local _, duration = GetCooldown(spellID)
+    return (duration and duration > 2) and math.floor(duration) or nil
+end)
+actualCD = (ok and cd) or RMT_SPELLS[spellID].cd
+```
+
+---
+
+#### 🔴 `ADDON_ACTION_FORBIDDEN` — `Frame:RegisterEvent()` (M+ 재진입 시)
+- **에러 위치**: `RegisterFrames()` — `combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")`
+- **발생 조건**: M+ 키스톤 던전 진입 시 (로딩 중 다른 애드온이 먼저 taint)
+- **원인 1**: `CHAT_MSG_ADDON`을 메인 청크에서 `RegisterEvent` 호출 → taint 유발
+- **원인 2**: `RegisterFrames()` 호출이 `ADDON_LOADED` 핸들러 내에서 동기적으로 실행 → 다른 애드온 ADDON_LOADED 핸들러가 taint를 남기면 차단됨
+- **수정 1**: `CHAT_MSG_ADDON` 등록을 메인 청크 → `ADDON_LOADED` 이후로 이동
+- **수정 2**: `RegisterFrames()` 호출을 `C_Timer.After(0, RegisterFrames)`로 지연 → 모든 ADDON_LOADED 핸들러 완료 후 실행 보장
+
+```lua
+-- Before (메인 청크에서 등록 — taint 위험)
+loader:RegisterEvent("CHAT_MSG_ADDON")
+
+-- After (ADDON_LOADED 핸들러 안에서 등록)
+self:RegisterEvent("CHAT_MSG_ADDON")
+
+-- RegisterFrames 지연 실행
+C_Timer.After(0, RegisterFrames)
+```
+
+---
+
+#### 🔴 `table index is secret` — `UNIT_SPELLCAST_SUCCEEDED`
+- **에러 위치**: `castFrame` OnEvent — `if RMT_SPELLS[spellID] then`
+- **발생 조건**: 파티원(party4 등) 스킬 사용 시
+- **원인**: WoW 12.0 Secret Value — 파티원의 `UNIT_SPELLCAST_SUCCEEDED` 이벤트에서 수신한 `spellID`가 secret value로 마킹됨. 테이블 인덱스로 사용 불가
+- **수정**: `pcall` 보호 + `unitID ~= "player"` 필터 명시
+
+```lua
+-- Before
+castFrame:SetScript("OnEvent", function(_, _, _, _, spellID)
+    if RMT_SPELLS[spellID] then SendUsed(spellID) end
+end)
+
+-- After
+castFrame:SetScript("OnEvent", function(_, _, unitID, _, spellID)
+    if unitID ~= "player" then return end
+    local ok, inDB = pcall(function() return RMT_SPELLS[spellID] end)
+    if ok and inDB then SendUsed(spellID) end
+end)
+```
+
+---
+
+### 개선
+
+#### 크로스렐름 그룹 지원 — `GetChannel()` INSTANCE_CHAT 분기
+- **문제**: WoW 인스턴스 내에서 `PARTY` / `RAID` 채널 애드온 메시지가 크로스렐름 파티원에게 미도달
+- **수정**: `IsInInstance()` 체크 추가 → 인스턴스 내에서는 `INSTANCE_CHAT` 사용
+
+```lua
+local function GetChannel()
+    local inInstance = IsInInstance()
+    if IsInRaid()  then return inInstance and "INSTANCE_CHAT" or "RAID"  end
+    if IsInGroup() then return inInstance and "INSTANCE_CHAT" or "PARTY" end
+    return nil
+end
+```
+
+---
+
+#### 파티원 감지 방식 교체 — COMBAT_LOG → UNIT_SPELLCAST_SUCCEEDED
+- **문제**: `COMBAT_LOG_EVENT_UNFILTERED`가 WoW 12.0에서 restricted event로 변경 → RegisterEvent 시 `ADDON_ACTION_FORBIDDEN` 발생 가능
+- **수정**: `memberFrame`에 `UNIT_SPELLCAST_SUCCEEDED`를 party1~4 + raid1~40에 직접 등록
+
+```lua
+local memberFrame = CreateFrame("Frame")
+local memberUnits = { "party1", "party2", "party3", "party4" }
+for i = 1, 40 do memberUnits[#memberUnits + 1] = "raid" .. i end
+memberFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unpack(memberUnits))
+```
+
+---
+
+#### HAVE 전송 시 실제 탤런트 적용 CD 반영
+- **문제**: `CollectMySpells()`가 항상 DB 하드코딩값 전송 → 탤런트로 쿨이 줄어도 파티원 화면에 기본값 표시
+- **수정**: 쿨 진행 중일 때 `GetCooldown()`으로 실제값 읽어 전송, 준비 상태면 DB 기본값 폴백
+
+```lua
+local ok, cd = pcall(function()
+    local _, duration = GetCooldown(spellID)
+    return (duration and duration > 2) and math.floor(duration) or nil
+end)
+local actualCD = (ok and cd) or data.cd
+```
+
+---
+
+### SpellDB 업데이트
+
+#### 승천 (114052) 신규 추가
+- 주술사 회복 특성 스킬, 기본 CD 180s
+- 치유의 해일 토템과 동일하게 최초의 승천자 탤런트 적용 대상
+
+#### 쿨감 탤런트 주석 전면 추가
+실전에서 파악된 탤런트 쿨감 목록을 DB 주석으로 정리.
+파티원 탤런트는 API로 조회 불가 → 하드코딩 기본값 사용, 주석으로 명시.
+
+| 스킬 | 탤런트 | 기본CD → 적용CD |
+|------|--------|----------------|
+| 평온 | 내면의 평화 (197073) | 180 → 150 |
+| 무쇠 껍질 | 무쇠껍질 연마 (382552) | 90 → 70 |
+| 천상의 찬가 | 대천사의 점증 (419110) | 180 → 120 |
+| 수호 영혼 | 수호 천사 (200209) | 조건부 — 만료 시 남은 쿨 60s |
+| 고통 억제 | 약자의 보호자 (373035) | 충전 +1회 + 보호막 사용 시 3s씩 감소 |
+| 재활 / 회복 | 고양된 영혼 (388551) | 150 → 120 |
+| 기의 고치 | 번데기 (202424) | 120 → 75 |
+| 되돌리기 | 시간의 기술자 (381922) | 240 → 180 |
+| 치유의 해일 토템 / 승천 | 최초의 승천자 (462440) | 180 → 120 |
+
+> 수호 영혼 / 고통 억제는 런타임 조건부 또는 동적 감소 → 추적 구조상 정확한 반영 불가
+
+---
+
+### Options.lua — 추적 정확도 안내 섹션 추가
+- 설정창 하단에 접기/펼치기 가능한 안내 섹션 추가
+- 대상: 공대장/레이더가 쿨타임 수치를 맹신하지 않도록 안내
+- 내용:
+  - WoW API 제약 (전투 중 타인 쿨타임 조회 불가) 설명
+  - 탤런트 쿨감으로 부정확할 수 있는 스킬 전체 목록
+  - 정확하게 추적되는 케이스 안내
+
+---
+
+### 변경된 파일
+- `RaidMitTracker.lua` — Secret value pcall, INSTANCE_CHAT, CHAT_MSG_ADDON taint 수정, UNIT_SPELLCAST_SUCCEEDED 파티원 감지, C_Timer 지연, HAVE CD 실제값
+- `SpellDB.lua` — 승천(114052) 추가, 쿨감 탤런트 주석 9개 스킬
+- `Options.lua` — 추적 정확도 안내 섹션 (접기/펼치기)
+
+---
+
 ## v1.0.0 — Session 2 (2026-03-31)
 
 ### 개요
