@@ -4,7 +4,7 @@ name: Release
 # 예: git tag v1.2.0 && git push origin v1.2.0
 #
 # 결과물: GitHub Release 페이지에 RaidMitTracker-vX.X.X.zip 첨부
-# CurseForge 업로드는 zip 파일을 다운받아 수동으로 올린다.
+# zip 내부 구조: RaidMitTracker/ 폴더 아래 모든 파일 (CurseForge 요구사항)
 on:
   push:
     tags:
@@ -14,33 +14,37 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # GitHub Release 생성 권한
+      contents: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 배포에 불필요한 파일을 제외하고 zip 패키징
-      # .pkgmeta ignore 목록과 동기화 유지
       - name: Build zip
         run: |
           VERSION="${GITHUB_REF_NAME}"
           ZIP_NAME="RaidMitTracker-${VERSION}.zip"
 
-          zip -r "${ZIP_NAME}" . \
-            --exclude "*.git*" \
-            --exclude ".github/*" \
-            --exclude ".pkgmeta" \
-            --exclude "DEVLOG.md" \
-            --exclude "CHANGELOG.md" \
-            --exclude "curseforge-description.html"
+          # CurseForge 요구사항: zip 안에 애드온 이름 폴더가 루트여야 함
+          # 임시 디렉토리에 RaidMitTracker/ 폴더로 복사 후 zip 생성
+          mkdir -p /tmp/pkg/RaidMitTracker
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.pkgmeta' \
+            --exclude='DEVLOG.md' \
+            --exclude='CHANGELOG.md' \
+            --exclude='curseforge-description.html' \
+            . /tmp/pkg/RaidMitTracker/
+
+          cd /tmp/pkg
+          zip -r "${GITHUB_WORKSPACE}/${ZIP_NAME}" RaidMitTracker/
 
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 
-      # CHANGELOG.md에서 현재 버전 섹션만 추출해서 릴리즈 노트로 사용
       - name: Extract release notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"   # v1.1.0 → 1.1.0
+          VERSION="${GITHUB_REF_NAME#v}"
           awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found" CHANGELOG.md \
             > release_notes.txt
 
