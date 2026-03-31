@@ -101,10 +101,20 @@ RMT_SPELLS = {
     },
 
     -- ── 수도사 ────────────────────────────────────────────────────
-    [297850] = {
+    -- 재활(115310) / 회복(388615): 특성으로 둘 중 하나만 선택 가능, 쿨타임 동일
+    [115310] = {
         name     = "재활",
         name_en  = "Revival",
-        cd       = 180,
+        cd       = 150,
+        class    = "MONK",
+        spec     = "MISTWEAVER",
+        category = "RAID",
+        icon     = 1020466,
+    },
+    [388615] = {
+        name     = "회복",
+        name_en  = "Restoral",
+        cd       = 150,
         class    = "MONK",
         spec     = "MISTWEAVER",
         category = "RAID",
