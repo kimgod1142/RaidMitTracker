@@ -467,7 +467,11 @@ loader:SetScript("OnEvent", function(self, event, ...)
 
         RMT_UI_Init()
         SetupMinimapButton()
-        RegisterFrames()   -- ← 이벤트 프레임은 반드시 ADDON_LOADED 이후에 등록
+        -- RegisterFrames()를 다음 프레임으로 지연
+        -- ADDON_LOADED 체인에서 다른 애드온이 taint를 남기면
+        -- 같은 핸들러 안에서도 RegisterEvent가 ADDON_ACTION_FORBIDDEN으로 차단됨
+        -- C_Timer.After(0, ...) 은 모든 ADDON_LOADED 핸들러가 완료된 후 실행 → taint 해소
+        C_Timer.After(0, RegisterFrames)
 
         Log("v" .. VERSION .. " " .. RMT_L.LOADED .. "  |cff888888/rmt|r")
     elseif event == "CHAT_MSG_ADDON" then
