@@ -299,7 +299,11 @@ end)
 -- 패널 갱신
 -- ================================================================
 function RMT_UI_RefreshPanel(force)
-    if not force and not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
+    -- force: 설정창/테스트 등 강제 표시
+    -- 패널이 이미 보이는 상태면 (config로 열었거나 /rmt show) → 리더 체크 없이 갱신
+    -- 패널이 숨겨진 상태이고 force도 아니면 → 리더/부리더만 자동 표시
+    local isLeader = UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")
+    if not force and not panel:IsShown() and not isLeader then
         return
     end
 
