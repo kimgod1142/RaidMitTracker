@@ -1,7 +1,7 @@
 name: Release
 
 # v* 태그 push 시 자동 실행
-# 예: git tag v1.1.0 && git push origin v1.1.0
+# 예: git tag v1.2.0 && git push origin v1.2.0
 on:
   push:
     tags:
@@ -14,16 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # BigWigs Packager: WoW 애드온 표준 패키저
-      # .pkgmeta 설정을 읽어 zip 생성 후 CurseForge / GitHub Release 업로드
-      # https://github.com/BigWigs/packager
+      # BigWigs packager 스크립트를 직접 실행
+      # .pkgmeta 설정 기반으로 zip 패키징 → CurseForge 업로드 → GitHub Release 생성
+      # 문서: https://github.com/BigWigs/packager
       - name: Package and upload
-        uses: BigWigs/packager@release
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          # CurseForge 게임 버전 자동 감지 (TOC Interface 필드 기준)
-          curse-project-id: ${{ vars.CURSE_PROJECT_ID }}
-          # Wago.io 업로드는 토큰 세팅 후 활성화
-          # wago-project-id: ${{ vars.WAGO_PROJECT_ID }}
+          CURSE_PROJECT_ID: ${{ vars.CURSE_PROJECT_ID }}
+        run: |
+          curl -s https://raw.githubusercontent.com/BigWigs/packager/release/release.sh | bash
