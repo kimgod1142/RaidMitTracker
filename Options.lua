@@ -419,6 +419,92 @@ AddCheckbox("아이콘 표시",             "showIcon",  true)
 AddCheckbox("아이콘 마우스오버 툴팁",  "tooltipOn", true)
 
 -- ================================================================
+-- ⚠️ 추적 한계 안내 (접기/펼치기)
+-- ================================================================
+AddHeader("⚠️ 추적 정확도 안내")
+
+local NOTICE_H   = 210
+local noticeOpen = false
+
+local noticeBtn = CreateFrame("Button", nil, opt, "UIPanelButtonTemplate")
+noticeBtn:SetPoint("TOPLEFT", opt, "TOPLEFT", PAD, yPos)
+noticeBtn:SetWidth(OPT_W - PAD * 2 - 4)
+noticeBtn:SetHeight(22)
+noticeBtn:SetText("▼ 쿨타임이 부정확할 수 있는 이유")
+local noticeBtnBottom = yPos - 28
+yPos = yPos - 28
+
+local noticeFrame = CreateFrame("Frame", nil, opt, "BackdropTemplate")
+noticeFrame:SetPoint("TOPLEFT",  opt, "TOPLEFT",  PAD,      noticeBtnBottom - 4)
+noticeFrame:SetPoint("TOPRIGHT", opt, "TOPRIGHT", -PAD,     0)
+noticeFrame:SetHeight(NOTICE_H)
+noticeFrame:Hide()
+
+if noticeFrame.SetBackdrop then
+    noticeFrame:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8,
+        insets   = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    noticeFrame:SetBackdropColor(0.05, 0.03, 0.0, 0.95)
+    noticeFrame:SetBackdropBorderColor(0.6, 0.35, 0.0, 0.9)
+end
+
+local noticeScroll = CreateFrame("ScrollFrame", nil, noticeFrame)
+noticeScroll:SetPoint("TOPLEFT",     noticeFrame, "TOPLEFT",     6,  -6)
+noticeScroll:SetPoint("BOTTOMRIGHT", noticeFrame, "BOTTOMRIGHT", -6,  6)
+noticeScroll:EnableMouseWheel(true)
+noticeScroll:SetScript("OnMouseWheel", function(self, delta)
+    local max = self:GetVerticalScrollRange()
+    self:SetVerticalScroll(math.max(0, math.min(max, self:GetVerticalScroll() - delta * 20)))
+end)
+
+local noticeContent = CreateFrame("Frame", nil, noticeScroll)
+noticeContent:SetWidth(OPT_W - PAD * 2 - 24)
+noticeScroll:SetScrollChild(noticeContent)
+
+local noticeText = noticeContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+noticeText:SetPoint("TOPLEFT", noticeContent, "TOPLEFT", 0, 0)
+noticeText:SetWidth(OPT_W - PAD * 2 - 28)
+noticeText:SetJustifyH("LEFT")
+noticeText:SetSpacing(2)
+noticeText:SetText(
+    "|cffff9900쿨타임 수치는 참고용입니다. 실제와 다를 수 있습니다.|r\n\n" ..
+    "|cffffff00[ WoW API 제약 — 12.0 이후 ]|r\n" ..
+    "전투 중 다른 플레이어의 쿨타임을 직접 조회할 수 없습니다.\n" ..
+    "스킬 사용 시각 + 기본 쿨타임으로 계산하며,\n" ..
+    "탤런트로 쿨이 줄어든 경우 반영되지 않을 수 있습니다.\n\n" ..
+    "|cffffff00[ 파티원 탤런트 쿨감이 반영 안 되는 스킬 ]|r\n" ..
+    "|cffaaaaaa• 치유의 해일 토템|r\n" ..
+    "  최초의 승천자 탤런트 적용 시 60초 단축 (180→120)\n" ..
+    "|cffaaaaaa• 수호 영혼|r\n" ..
+    "  수호 천사 탤런트: 대상을 살리지 못하고 만료 시\n" ..
+    "  남은 쿨타임이 60초로 감소 (조건부)\n\n" ..
+    "|cffffff00[ 언제 정확한가 ]|r\n" ..
+    "• 본인 스킬: 탤런트 적용 실제 CD 자동 반영\n" ..
+    "• 파티원 스킬: 애드온 설치 후 1회 사용 시점부터 갱신"
+)
+noticeText:SetHeight(noticeText:GetStringHeight() + 10)
+noticeContent:SetHeight(noticeText:GetStringHeight() + 10)
+
+-- 기본 높이(접힌 상태) 기준점 저장
+local baseYEnd = yPos
+
+noticeBtn:SetScript("OnClick", function()
+    noticeOpen = not noticeOpen
+    if noticeOpen then
+        noticeFrame:Show()
+        noticeBtn:SetText("▲ 접기")
+        opt:SetHeight(math.abs(baseYEnd) + NOTICE_H + PAD + 18)
+    else
+        noticeFrame:Hide()
+        noticeBtn:SetText("▼ 쿨타임이 부정확할 수 있는 이유")
+        opt:SetHeight(math.abs(baseYEnd) + PAD + 10)
+    end
+end)
+
+-- ================================================================
 -- 프레임 최종 높이 확정
 -- ================================================================
 opt:SetHeight(math.abs(yPos) + PAD + 10)
