@@ -236,25 +236,23 @@ local function RegisterFrames()
         end
     end)
 
-    -- 전투 로그 백업 — 공대원 스킬 사용 감지 (USED 메시지 미수신 시 보완)
-    local combatFrame = CreateFrame("Frame")
-    combatFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    combatFrame:SetScript("OnEvent", function()
-        local _, subEvent, _, sourceGUID, sourceName = CombatLogGetCurrentEventInfo()
-        if subEvent ~= "SPELL_CAST_SUCCESS" then return end
+    -- 공대원 스킬 사용 감지 — UNIT_SPELLCAST_SUCCEEDED 기반
+    -- COMBAT_LOG_EVENT_UNFILTERED는 TWW 12.0에서 restricted event가 되어
+    -- RegisterEvent 호출 시 ADDON_ACTION_FORBIDDEN 발생 → unit event 방식으로 교체
+    local memberFrame = CreateFrame("Frame")
+    local memberUnits = { "party1", "party2", "party3", "party4" }
+    for i = 1, 40 do memberUnits[#memberUnits + 1] = "raid" .. i end
+    memberFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unpack(memberUnits))
+    memberFrame:SetScript("OnEvent", function(_, _, unitID, _, spellID)
+        if not RMT_SPELLS[spellID] then return end
+        if UnitIsUnit(unitID, "player") then return end  -- 본인은 castFrame에서 처리
 
-        local spellID = select(12, CombatLogGetCurrentEventInfo())
-        if not spellID or not RMT_SPELLS[spellID] then return end
-
-        -- 본인 캐릭터는 UNIT_SPELLCAST_SUCCEEDED로 이미 처리됨
-        if sourceGUID == UnitGUID("player") then return end
-
-        -- 공대원 이름 정규화
-        local name = sourceName and (sourceName:match("^([^%-]+)") or sourceName) or "Unknown"
+        local unitName = UnitName(unitID)
+        if not unitName then return end
+        local name = unitName:match("^([^%-]+)") or unitName
 
         local dbEntry = RMT_SPELLS[spellID]
-        local cd = dbEntry and dbEntry.cd or 180
-        ProcessUsed(name, spellID, GetTime(), cd)
+        ProcessUsed(name, spellID, GetTime(), dbEntry and dbEntry.cd or 180)
     end)
 
     -- 전멸/소프트리셋 감지
