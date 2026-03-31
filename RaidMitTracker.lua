@@ -7,7 +7,7 @@
 -- License: MIT
 
 local ADDON_NAME = "RaidMitTracker"
-local VERSION    = "1.0.0"
+local VERSION    = "1.1.0"
 local PREFIX     = "MITTRACK"   -- SendAddonMessage 프리픽스 (최대 16자)
 
 -- ================================================================

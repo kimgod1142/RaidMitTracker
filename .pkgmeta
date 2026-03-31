@@ -1,0 +1,9 @@
+package-as: RaidMitTracker
+
+ignore:
+  - DEVLOG.md
+  - CHANGELOG.md
+  - curseforge-description.html
+  - .pkgmeta
+  - .github
+  - .gitignore
