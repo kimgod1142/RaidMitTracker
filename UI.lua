@@ -1,6 +1,15 @@
 -- UI.lua
 -- 공대장/부공대장 전용 공생기 패널
 -- 레이아웃: [플레이어명] [스킬아이콘] [직업색 쿨타임바 ───────] [남은초]
+--
+-- ── 공개 API 요약 ──────────────────────────────────────────────────────
+--  RMT_UI_Init()            로그인 시 저장된 위치·크기·배경 복원 (ADDON_LOADED 후)
+--  RMT_UI_RefreshPanel()    이벤트 핸들러용: 패널이 열려 있을 때만 내용 갱신
+--  RMT_UI_ShowPanel()       /rmt show: 리더·부리더만 패널 열기
+--  RMT_UI_ForceShow()       테스트·설정 미리보기: 리더 체크 없이 패널 열기
+--  RMT_UI_HidePanel()       패널 닫기
+--  RMT_UI_ApplySettings()   설정 변경 후 행 풀 초기화 + 재구성 (Options.lua 전용)
+-- ────────────────────────────────────────────────────────────────────────
 
 local PANEL_W   = 340
 local ROW_H     = 28
@@ -11,9 +20,8 @@ local BAR_H     = 16
 local TITLE_H   = 22
 
 -- 리사이즈 제한
--- 가로: 이름칸 + 아이콘 + 바 최소폭 + 여백
 local MIN_W = NAME_W + ICON_SZ + 8 + PAD * 2 + 80   -- ~218px
-local MIN_H = TITLE_H + PAD * 2                       -- 행 없을 때 최솟값, 동적 갱신됨
+local MIN_H = TITLE_H + PAD * 2                       -- 동적 갱신됨
 
 -- 직업별 색상 (RAID_CLASS_COLORS 없을 때 대비 fallback)
 local CLASS_COLORS = {
@@ -41,7 +49,7 @@ local function GetClassColor(playerName, spellID)
         if cc then return cc.r, cc.g, cc.b end
     end
 
-    -- 2순위: SpellDB의 class 필드로 직업 확정 (스킬은 직업 고정이므로 확실)
+    -- 2순위: SpellDB의 class 필드 (스킬은 직업 고정이므로 확실)
     if spellID then
         local spellData = RMT_SPELLS[spellID]
         if spellData and spellData.class then
@@ -51,7 +59,7 @@ local function GetClassColor(playerName, spellID)
         end
     end
 
-    return 0.6, 0.6, 0.6   -- 최후 fallback (실질적으로 도달 불가)
+    return 0.6, 0.6, 0.6
 end
 
 -- ================================================================
@@ -80,13 +88,13 @@ if panel.SetBackdrop then
     panel:SetBackdropBorderColor(0.8, 0.5, 0.1, 1)
 end
 
--- 이동: 타이틀 영역만 드래그
+-- 타이틀 영역만 드래그
 panel:SetScript("OnDragStart", panel.StartMoving)
 panel:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     if RMTdb then
         local pt, _, rpt, x, y = self:GetPoint()
-        RMTdb.panelPos  = { pt = pt, rpt = rpt, x = x, y = y }
+        RMTdb.panelPos = { pt = pt, rpt = rpt, x = x, y = y }
     end
 end)
 
@@ -100,7 +108,7 @@ end)
 -- ================================================================
 -- 리사이즈 핸들
 -- ================================================================
-local HANDLE_THICK = 6   -- 핸들 두께 (px)
+local HANDLE_THICK = 6
 
 local function MakeEdgeHandle(sizeDir)
     local h = CreateFrame("Frame", nil, panel)
@@ -118,24 +126,20 @@ local function MakeEdgeHandle(sizeDir)
     return h
 end
 
--- 오른쪽 테두리
 local hRight = MakeEdgeHandle("RIGHT")
-hRight:SetPoint("TOPRIGHT",    panel, "TOPRIGHT",    0,           -TITLE_H)
-hRight:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0,            HANDLE_THICK)
+hRight:SetPoint("TOPRIGHT",    panel, "TOPRIGHT",    0,            -TITLE_H)
+hRight:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0,             HANDLE_THICK)
 hRight:SetWidth(HANDLE_THICK)
 
--- 아래쪽 테두리
 local hBottom = MakeEdgeHandle("BOTTOM")
-hBottom:SetPoint("BOTTOMLEFT",  panel, "BOTTOMLEFT",  HANDLE_THICK, 0)
+hBottom:SetPoint("BOTTOMLEFT",  panel, "BOTTOMLEFT",   HANDLE_THICK, 0)
 hBottom:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -HANDLE_THICK, 0)
 hBottom:SetHeight(HANDLE_THICK)
 
--- 오른쪽 아래 모서리 (대각선)
 local hCorner = MakeEdgeHandle("BOTTOMRIGHT")
 hCorner:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
 hCorner:SetSize(HANDLE_THICK + 4, HANDLE_THICK + 4)
 
--- 모서리 핸들 시각적 아이콘 (WoW 기본 리사이즈 그립)
 local gripTex = hCorner:CreateTexture(nil, "OVERLAY")
 gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 gripTex:SetSize(16, 16)
@@ -249,7 +253,6 @@ local function GetRow(parent)
     if not row then row = MakeRow(parent) end
     row.frame:SetParent(parent)
     row.frame:Show()
-    -- 재사용 시 텍스트 상태 초기화
     row.cdText:SetText("")
     row.cdText:Show()
     row.readyText:Hide()
@@ -262,7 +265,7 @@ local function ReleaseRow(row)
 end
 
 -- ================================================================
--- OnUpdate: 매 프레임 바 + 텍스트 갱신
+-- OnUpdate: 매 프레임 바 + 텍스트 갱신 (표시 여부와 무관하게 항상 실행)
 -- ================================================================
 local updateFrame = CreateFrame("Frame")
 updateFrame:SetScript("OnUpdate", function()
@@ -272,7 +275,6 @@ updateFrame:SetScript("OnUpdate", function()
         if row.endTime and row.endTime > 0 then
             local remain = row.endTime - now
             if remain > 0 then
-                -- 쿨타임 진행 중: 바 + 우측 숫자
                 row.bar:SetValue(remain / (row.totalCD or 1))
                 local m = math.floor(remain / 60)
                 local s = math.floor(remain % 60)
@@ -281,13 +283,12 @@ updateFrame:SetScript("OnUpdate", function()
                 row.cdText:Show()
                 row.readyText:Hide()
             else
-                -- 쿨타임 종료: "사용가능" 중앙
                 row.bar:SetValue(0)
                 row.cdText:Hide()
                 row.readyText:Show()
             end
         else
-            -- endTime = 0: 한 번도 안 씀 = 사용가능
+            -- endTime = 0: 한 번도 사용 안 함 = 사용 가능
             row.bar:SetValue(0)
             row.cdText:Hide()
             row.readyText:Show()
@@ -296,20 +297,14 @@ updateFrame:SetScript("OnUpdate", function()
 end)
 
 -- ================================================================
--- 패널 갱신
+-- 내부: 행 재구성 (표시 여부·리더 체크와 완전히 분리)
+-- 호출 전에 패널이 열려 있어야 하는지는 호출자가 판단한다.
 -- ================================================================
-function RMT_UI_RefreshPanel(force)
-    -- force: 설정창/테스트 등 강제 표시
-    -- 패널이 이미 보이는 상태면 (config로 열었거나 /rmt show) → 리더 체크 없이 갱신
-    -- 패널이 숨겨진 상태이고 force도 아니면 → 리더/부리더만 자동 표시
-    local isLeader = UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")
-    if not force and not panel:IsShown() and not isLeader then
-        return
-    end
-
+local function RebuildRows()
     for _, row in ipairs(activeRows) do ReleaseRow(row) end
     activeRows = {}
 
+    -- RMT.roster → 정렬된 항목 목록
     local entries = {}
     for playerName, spells in pairs(RMT.roster) do
         for spellID, data in pairs(spells) do
@@ -321,6 +316,7 @@ function RMT_UI_RefreshPanel(force)
             }
         end
     end
+
     local sortMode = RMTdb and RMTdb.sortMode or "name"
     table.sort(entries, function(a, b)
         if sortMode == "cd" then
@@ -333,6 +329,7 @@ function RMT_UI_RefreshPanel(force)
         return a.spellID < b.spellID
     end)
 
+    -- 행 배치
     local rowH = (RMTdb and RMTdb.rowHeight)  or ROW_H
     local gap  = (RMTdb and RMTdb.rowSpacing) or 3
     local yOff = -(TITLE_H + 4)
@@ -344,11 +341,9 @@ function RMT_UI_RefreshPanel(force)
         row.frame:SetPoint("TOPLEFT",  panel, "TOPLEFT",  PAD,  yOff)
         row.frame:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD, yOff)
 
-        if spellData and spellData.icon then
-            row.icon:SetTexture(spellData.icon)
-        else
-            row.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-        end
+        row.icon:SetTexture(
+            (spellData and spellData.icon) or "Interface\\Icons\\INV_Misc_QuestionMark"
+        )
 
         local r, g, b = GetClassColor(e.player, e.spellID)
         row.nameText:SetText(string.format("|cff%02x%02x%02x%s|r", r*255, g*255, b*255, e.player))
@@ -362,67 +357,93 @@ function RMT_UI_RefreshPanel(force)
         yOff = yOff - rowH - gap
     end
 
-    -- 콘텐츠 전체 높이 계산 → 리사이즈 하한선으로 설정
+    -- 패널 높이: 콘텐츠에 맞게 조정
     local contentH = TITLE_H + (#entries * (rowH + gap)) + PAD
     MIN_H = math.max(TITLE_H + PAD * 2, contentH)
     panel:SetResizeBounds(MIN_W, MIN_H)
-
-    -- 현재 패널 높이가 콘텐츠보다 짧으면 자동 늘림
     if panel:GetHeight() < MIN_H then
         panel:SetHeight(MIN_H)
     end
-
-    panel:Show()
 end
 
 -- ================================================================
--- 공개 함수
+-- 공개 API
 -- ================================================================
 
--- 설정 변경 시 호출: 행 풀 초기화 후 재생성
--- force = true 이면 공대장 체크 없이 강제 표시 (옵션창 미리보기용)
-function RMT_UI_ApplySettings(force)
-    for _, row in ipairs(activeRows) do row.frame:Hide() end
-    activeRows = {}
-    wipe(rowPool)
-    if panel.SetBackdrop then
-        panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.55)
+-- 이벤트 핸들러용 갱신.
+-- ProcessUsed / OnAddonMessage(HAVE·USED) / DoWipeReset 에서 호출.
+-- 패널이 닫혀 있으면 아무것도 하지 않는다.
+function RMT_UI_RefreshPanel()
+    if panel:IsShown() then
+        RebuildRows()
     end
-    RMT_UI_RefreshPanel(force)
 end
 
-function RMT_UI_HidePanel()
-    panel:Hide()
-end
-
+-- /rmt show 명령어.
+-- 리더·부리더만 패널을 열 수 있다.
 function RMT_UI_ShowPanel()
     if not (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
         print("|cffff9900[RMT]|r " .. RMT_L.LEADER_ONLY)
         return
     end
-    RMT_UI_RefreshPanel()
+    panel:Show()
+    RebuildRows()
 end
 
+-- 테스트 모드 (/rmt test) · 설정창 미리보기 전용.
+-- 리더 여부와 무관하게 패널을 강제로 열고 내용을 갱신한다.
 function RMT_UI_ForceShow()
-    RMT_UI_RefreshPanel(true)
+    panel:Show()
+    RebuildRows()
 end
 
+-- 패널 닫기.
+function RMT_UI_HidePanel()
+    panel:Hide()
+end
+
+-- 설정 변경 후 Options.lua에서 호출.
+-- 행 풀을 초기화하고 배경 색상을 재적용한 뒤 내용을 다시 그린다.
+-- open=true 이면 패널이 닫혀 있어도 강제로 열어서 미리보기를 보여준다.
+function RMT_UI_ApplySettings(open)
+    -- 행 풀 초기화 (폰트·크기 등이 바뀌었으므로 기존 행 재사용 불가)
+    for _, row in ipairs(activeRows) do row.frame:Hide() end
+    activeRows = {}
+    wipe(rowPool)
+
+    -- 배경 투명도 재적용
+    if panel.SetBackdrop then
+        panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb and RMTdb.bgAlpha or 0.55)
+    end
+
+    if open then
+        panel:Show()
+    end
+
+    if panel:IsShown() then
+        RebuildRows()
+    end
+end
+
+-- 로그인 시 저장된 위치·크기·배경 복원.
+-- ADDON_LOADED 이후 RMTdb가 준비된 시점에 RaidMitTracker.lua에서 호출.
 function RMT_UI_Init()
-    if RMTdb then
-        if RMTdb.panelPos then
-            local p = RMTdb.panelPos
-            panel:ClearAllPoints()
-            panel:SetPoint(p.pt, UIParent, p.rpt, p.x, p.y)
-        end
-        if RMTdb.panelSize then
-            panel:SetSize(
-                math.max(MIN_W, RMTdb.panelSize.w),
-                math.max(MIN_H, RMTdb.panelSize.h)
-            )
-        end
-        -- 저장된 bgAlpha 복원 (UI.lua 로드 시 RMTdb가 nil이라 못 읽었던 값)
-        if panel.SetBackdrop and RMTdb.bgAlpha then
-            panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb.bgAlpha)
-        end
+    if not RMTdb then return end
+
+    if RMTdb.panelPos then
+        local p = RMTdb.panelPos
+        panel:ClearAllPoints()
+        panel:SetPoint(p.pt, UIParent, p.rpt, p.x, p.y)
+    end
+
+    if RMTdb.panelSize then
+        panel:SetSize(
+            math.max(MIN_W, RMTdb.panelSize.w),
+            math.max(MIN_H, RMTdb.panelSize.h)
+        )
+    end
+
+    if panel.SetBackdrop and RMTdb.bgAlpha then
+        panel:SetBackdropColor(0.04, 0.04, 0.08, RMTdb.bgAlpha)
     end
 end
