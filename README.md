@@ -8,11 +8,14 @@
 
 ## Features
 
-- **Addon message communication** — cooldown data is shared silently via `SendAddonMessage`. Nothing appears in raid chat.
+- **Silent communication** — cooldown data is shared via `SendAddonMessage`. Nothing appears in raid chat.
 - **Auto-detect on join** — members automatically report their available spells when entering a group.
-- **Real-time bar tracking** — a smooth, class-colored status bar counts down each cooldown every frame.
-- **Combat log backup** — spell casts by members without the addon are still detected via the combat log.
+- **Real-time bar tracking** — smooth, class-colored status bars count down each cooldown every frame.
+- **Group cast detection** — spell casts by all group members are detected via `UNIT_SPELLCAST_SUCCEEDED`.
+- **Talent-aware cooldowns** — actual cooldown duration is read from the game API at cast time, not hardcoded.
 - **Resizable, draggable panel** — position and size are saved between sessions.
+- **Settings panel** — `/rmt config` opens a full options UI with bar texture, font size, row height, sort mode, and more.
+- **Minimap button** — left-click opens settings, right-click opens the tracker panel.
 - **Solo test mode** — `/rmt test` loads dummy data with random player names so you can preview the UI without a group.
 - **English / Korean UI** — automatically switches based on your client locale.
 
@@ -32,7 +35,8 @@
 | Healing Tide Totem | Restoration Shaman | 3 min |
 | Rewind | Preservation Evoker | 4 min |
 | Tranquility | Restoration Druid | 3 min |
-| Revival | Mistweaver Monk | 3 min |
+| Revival *(talent)* | Mistweaver Monk | 2.5 min |
+| Restoral *(talent)* | Mistweaver Monk | 2.5 min |
 | Rallying Cry | Warrior (any) | 3 min |
 
 ### External Cooldowns (외부생존기)
@@ -51,15 +55,15 @@
 ## Requirements
 
 - **All raid members must install this addon** for full coverage.
-  Members without the addon can still be partially tracked via combat log detection, but their spell roster won't be known in advance.
+  Members without the addon won't appear in the panel until they cast a tracked spell.
 
 ---
 
 ## Installation
 
-1. Download and extract the `RaidMitTracker` folder.
-2. Place it in: `World of Warcraft/_retail_/Interface/AddOns/`
-3. Reload WoW or log in. The addon loads automatically.
+1. Download `RaidMitTracker-vX.X.X.zip` from the [Releases](../../releases) page.
+2. Extract and place the `RaidMitTracker` folder into: `World of Warcraft/_retail_/Interface/AddOns/`
+3. Reload WoW or log in.
 
 ---
 
@@ -69,10 +73,11 @@
 
 | Command | Description |
 |---|---|
-| `/rmt` | (Raid leader / assistant) Broadcast a CHECK request — all members report their available spells. |
+| `/rmt` | (Leader / assistant) Broadcast a CHECK — all members report their available spells. |
 | `/rmt show` | Open the tracker panel (leader / assistant only). |
-| `/rmt reset` | Clear all tracked data. |
+| `/rmt config` | Open the settings panel. |
 | `/rmt test` | Load dummy data for solo UI testing. |
+| `/rmt reset` | Clear all tracked data. |
 
 ### Workflow
 
@@ -104,20 +109,21 @@ Raid leader's addon
   └─ Builds roster table
   └─ Shows panel with live cooldown bars
 
-On spell cast (UNIT_SPELLCAST_SUCCEEDED / COMBAT_LOG_EVENT_UNFILTERED)
-  └─ SendAddonMessage("MITTRACK", "USED:spellID:timestamp", "RAID")
-  └─ endTime = castTime + hardcoded CD  →  bar fills and counts down
+On spell cast (UNIT_SPELLCAST_SUCCEEDED — all group members)
+  └─ Reads actual cooldown via C_Spell.GetSpellCooldown()
+  └─ SendAddonMessage("MITTRACK", "USED:spellID:timestamp:actualCD", "RAID")
+  └─ endTime = castTime + actualCD  →  bar fills and counts down
 ```
 
-Cooldown durations are hardcoded in `SpellDB.lua`. Direct API queries to other players' cooldowns are not possible in WoW, so the addon relies on self-reporting and cast event detection.
+Cooldown durations are read from the game API at cast time (`C_Spell.GetSpellCooldown`), so talent reductions are reflected automatically.
+Direct cooldown queries on other players are not possible in the WoW API — this addon works around that via self-reporting and group cast event detection.
 
 ---
 
 ## Limitations
 
-- **Requires addon on all members** for pre-combat roster building. Combat log fallback covers cast events only.
-- **Talent-reduced cooldowns** are not currently detected — base cooldown values are used.
-- **Cooldown tracking accuracy** depends on members being online when `/rmt` is sent, or being present during a GROUP_ROSTER_UPDATE event.
+- **Requires addon on all members** for pre-combat roster building. Members without the addon won't appear until they cast.
+- **Cooldown tracking accuracy** depends on members being present when `/rmt` is sent, or online during a `GROUP_ROSTER_UPDATE` event.
 
 ---
 

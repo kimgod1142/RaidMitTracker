@@ -4,11 +4,14 @@
 
 <h3>Key Features</h3>
 <ul>
-  <li><strong>Silent communication</strong> — uses <code>SendAddonMessage</code>, invisible to non-addon users and raid chat.</li>
+  <li><strong>Silent communication</strong> — uses <code>SendAddonMessage</code>, invisible to raid chat.</li>
   <li><strong>Auto-report on group join</strong> — members automatically announce their available spells when entering a group.</li>
   <li><strong>Live cooldown bars</strong> — smooth, class-colored status bars update every frame.</li>
-  <li><strong>Combat log backup</strong> — spell casts by members without the addon are still detected.</li>
+  <li><strong>Group cast detection</strong> — spell casts by all group members are tracked via <code>UNIT_SPELLCAST_SUCCEEDED</code>.</li>
+  <li><strong>Talent-aware cooldowns</strong> — actual cooldown duration is read from the API at cast time, not hardcoded.</li>
   <li><strong>Resizable &amp; draggable panel</strong> — position and size are saved between sessions.</li>
+  <li><strong>Full settings panel</strong> — <code>/rmt config</code> opens an options UI with bar texture, font size, row height, sort mode, icon toggle, and more.</li>
+  <li><strong>Minimap button</strong> — left-click opens settings, right-click opens the tracker panel.</li>
   <li><strong>Solo test mode</strong> — <code>/rmt test</code> loads dummy data so you can preview the UI without a group.</li>
   <li><strong>English / Korean UI</strong> — automatically switches based on your client locale (enUS / koKR).</li>
 </ul>
@@ -24,7 +27,8 @@
   <tr><td>Healing Tide Totem</td><td>Restoration Shaman</td><td>3 min</td></tr>
   <tr><td>Rewind</td><td>Preservation Evoker</td><td>4 min</td></tr>
   <tr><td>Tranquility</td><td>Restoration Druid</td><td>3 min</td></tr>
-  <tr><td>Revival</td><td>Mistweaver Monk</td><td>3 min</td></tr>
+  <tr><td>Revival <em>(talent)</em></td><td>Mistweaver Monk</td><td>2.5 min</td></tr>
+  <tr><td>Restoral <em>(talent)</em></td><td>Mistweaver Monk</td><td>2.5 min</td></tr>
   <tr><td>Rallying Cry</td><td>Warrior (any spec)</td><td>3 min</td></tr>
 </table>
 
@@ -40,27 +44,28 @@
 </table>
 
 <h3>Requirements</h3>
-<p><strong>All raid members should install the addon</strong> for complete pre-combat roster coverage. Members without the addon can still be partially tracked via combat log detection, but their spell list won't be known until they cast.</p>
+<p><strong>All raid members should install the addon</strong> for complete pre-combat roster coverage. Members without the addon won't appear in the panel until they cast a tracked spell.</p>
 
 <h3>Commands</h3>
 <table>
   <tr><th>Command</th><th>Description</th></tr>
-  <tr><td><code>/rmt</code></td><td>Broadcast a cooldown check request to all members (leader / assistant only).</td></tr>
+  <tr><td><code>/rmt</code></td><td>Broadcast a cooldown check to all members (leader / assistant only).</td></tr>
   <tr><td><code>/rmt show</code></td><td>Open the tracker panel (leader / assistant only).</td></tr>
-  <tr><td><code>/rmt reset</code></td><td>Clear all tracked roster data.</td></tr>
+  <tr><td><code>/rmt config</code></td><td>Open the settings panel.</td></tr>
   <tr><td><code>/rmt test</code></td><td>Load dummy data for solo UI testing.</td></tr>
+  <tr><td><code>/rmt reset</code></td><td>Clear all tracked roster data.</td></tr>
 </table>
 
 <h3>How It Works</h3>
 <p>
-  The raid leader sends a <strong>CHECK</strong> message via addon channel. Each member's addon replies with a <strong>HAVE</strong> message listing their available spell IDs. When a tracked spell is cast, a <strong>USED</strong> message is sent with the cast timestamp. The leader's addon calculates <code>endTime = castTime + hardcoded CD</code> and the bar counts down smoothly every frame.
+  The raid leader sends a <strong>CHECK</strong> message via addon channel. Each member's addon replies with a <strong>HAVE</strong> message listing their available spell IDs. When a tracked spell is cast, a <strong>USED</strong> message is broadcast with the timestamp and actual cooldown duration (read from <code>C_Spell.GetSpellCooldown</code> at cast time, so talent reductions are reflected). The leader's addon calculates <code>endTime = castTime + actualCD</code> and the bar counts down smoothly every frame.
 </p>
-<p>Direct cooldown queries on other players are not available in the WoW API — this addon works around that limitation using self-reporting and combat log event detection.</p>
+<p>Direct cooldown queries on other players are not available in the WoW API — this addon works around that using self-reporting and group cast event detection.</p>
 
 <h3>Limitations</h3>
 <ul>
   <li>Requires the addon installed on all members for full pre-combat roster visibility.</li>
-  <li>Talent-reduced cooldowns are not currently detected (base CD values are used).</li>
+  <li>Members without the addon won't appear until they cast a tracked spell.</li>
 </ul>
 
 <hr/>
@@ -74,8 +79,11 @@
   <li><strong>채팅 스팸 없음</strong> — <code>SendAddonMessage</code> 사용, 채팅창에 전혀 표시되지 않음.</li>
   <li><strong>자동 보고</strong> — 공대 합류 시 본인 보유 스킬 자동 전송.</li>
   <li><strong>실시간 쿨타임 바</strong> — 매 프레임 업데이트, 직업 색상 적용.</li>
-  <li><strong>전투 로그 백업</strong> — 애드온 미설치 공대원의 스킬 사용도 감지.</li>
+  <li><strong>그룹 스킬 감지</strong> — 전체 공대원의 스킬 사용을 <code>UNIT_SPELLCAST_SUCCEEDED</code>로 감지.</li>
+  <li><strong>탤런트 쿨타임 반영</strong> — 스킬 사용 시 실제 쿨타임을 API에서 읽어 적용.</li>
   <li><strong>리사이즈 &amp; 드래그</strong> — 위치/크기 자동 저장.</li>
+  <li><strong>설정 패널</strong> — <code>/rmt config</code> 로 바 텍스처, 폰트 크기, 행 높이, 정렬 방식 등 설정.</li>
+  <li><strong>미니맵 버튼</strong> — 좌클릭: 설정, 우클릭: 트래커 패널 열기.</li>
   <li><strong>솔로 테스트 모드</strong> — <code>/rmt test</code> 로 혼자서도 UI 확인 가능.</li>
   <li><strong>영어 / 한국어 자동 전환</strong> — 클라이언트 언어 설정 기준.</li>
 </ul>
@@ -85,12 +93,12 @@
   <tr><th>명령어</th><th>설명</th></tr>
   <tr><td><code>/rmt</code></td><td>공생기 확인 요청 전송 (공대장/부공대장 전용)</td></tr>
   <tr><td><code>/rmt show</code></td><td>패널 표시 (공대장/부공대장 전용)</td></tr>
-  <tr><td><code>/rmt reset</code></td><td>목록 초기화</td></tr>
+  <tr><td><code>/rmt config</code></td><td>설정 패널 열기</td></tr>
   <tr><td><code>/rmt test</code></td><td>솔로 UI 테스트용 가짜 데이터 로드</td></tr>
+  <tr><td><code>/rmt reset</code></td><td>목록 초기화</td></tr>
 </table>
 
 <h3>주의 사항</h3>
 <ul>
-  <li>전체 공대원 설치 권장 — 미설치자는 전투 로그로 부분 감지만 가능.</li>
-  <li>쿨타임 감소 특성은 현재 미지원 (기본 쿨타임 사용).</li>
+  <li>전체 공대원 설치 권장 — 미설치자는 스킬 사용 전까지 패널에 표시되지 않음.</li>
 </ul>
