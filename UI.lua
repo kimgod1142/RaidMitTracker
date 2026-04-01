@@ -265,11 +265,20 @@ local function ReleaseRow(row)
 end
 
 -- ================================================================
--- OnUpdate: 매 프레임 바 + 텍스트 갱신 (표시 여부와 무관하게 항상 실행)
+-- OnUpdate: 바 + 텍스트 갱신
+-- ⚠️ 성능 최적화:
+--   1. 0.2s 간격 throttle — 60fps 대신 5fps로 갱신 (쿨타임 초 단위, 차이 없음)
+--   2. panel OnShow/OnHide에서 등록/해제 — 패널이 닫히면 OnUpdate 자체를 중단
 -- ================================================================
-local updateFrame = CreateFrame("Frame")
-updateFrame:SetScript("OnUpdate", function()
-    if #activeRows == 0 then return end
+local updateFrame   = CreateFrame("Frame")
+local UPDATE_TICK   = 0.2   -- seconds
+local tickAccum     = 0
+
+local function DoUpdate(_, elapsed)
+    tickAccum = tickAccum + elapsed
+    if tickAccum < UPDATE_TICK then return end
+    tickAccum = 0
+
     local now = GetTime()
     for _, row in ipairs(activeRows) do
         if row.endTime and row.endTime > 0 then
@@ -294,6 +303,17 @@ updateFrame:SetScript("OnUpdate", function()
             row.readyText:Show()
         end
     end
+end
+
+-- 패널 표시 시 OnUpdate 시작, 숨김 시 완전 중단 + 행 해제
+panel:SetScript("OnShow", function()
+    tickAccum = 0
+    updateFrame:SetScript("OnUpdate", DoUpdate)
+end)
+panel:SetScript("OnHide", function()
+    updateFrame:SetScript("OnUpdate", nil)
+    for _, row in ipairs(activeRows) do ReleaseRow(row) end
+    activeRows = {}
 end)
 
 -- ================================================================
@@ -397,7 +417,7 @@ function RMT_UI_ForceShow()
     RebuildRows()
 end
 
--- 패널 닫기.
+-- 패널 닫기 (OnHide 스크립트가 OnUpdate 중단 + 행 해제를 처리함)
 function RMT_UI_HidePanel()
     panel:Hide()
 end
@@ -407,6 +427,7 @@ end
 -- open=true 이면 패널이 닫혀 있어도 강제로 열어서 미리보기를 보여준다.
 function RMT_UI_ApplySettings(open)
     -- 행 풀 초기화 (폰트·크기 등이 바뀌었으므로 기존 행 재사용 불가)
+    -- OnHide가 아직 안 불린 경우를 대비해 수동으로 정리
     for _, row in ipairs(activeRows) do row.frame:Hide() end
     activeRows = {}
     wipe(rowPool)
