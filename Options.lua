@@ -417,6 +417,7 @@ sortBtn = AddDropdownBtn("정렬 기준",
 AddHeader("기능")
 AddCheckbox("아이콘 표시",             "showIcon",  true)
 AddCheckbox("아이콘 마우스오버 툴팁",  "tooltipOn", true)
+AddCheckbox(RMT_L and RMT_L.AUTO_SHOW or "인스턴스 진입 시 패널 자동 표시", "autoShow", false)
 
 -- ================================================================
 -- ⚠️ 추적 한계 안내 (접기/펼치기)

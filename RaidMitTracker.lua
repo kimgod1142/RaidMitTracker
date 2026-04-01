@@ -40,14 +40,24 @@ end
 -- WoW 호환 쿨타임 조회
 -- 구버전: GetSpellCooldown(id) → start, duration
 -- WoW:    C_Spell.GetSpellCooldown(id) → { startTime, duration, ... }
+-- ⚠️ WoW 12.0+: GetSpellCooldown이 GCD(~1.5s)를 반환하는 taint 버그 존재
+--    duration < 5 는 GCD 오염값으로 판정하여 무시
 local function GetCooldown(spellID)
+    local start, duration = 0, 0
     if C_Spell and C_Spell.GetSpellCooldown then
-        local info = C_Spell.GetSpellCooldown(spellID)
-        return (info and info.startTime or 0), (info and info.duration or 0)
+        local ok, info = pcall(C_Spell.GetSpellCooldown, spellID)
+        if ok and info then
+            start    = info.startTime or 0
+            duration = info.duration  or 0
+        end
     elseif type(GetSpellCooldown) == "function" then
-        return GetSpellCooldown(spellID)
+        local ok
+        ok, start, duration = pcall(GetSpellCooldown, spellID)
+        if not ok then start, duration = 0, 0 end
     end
-    return 0, 0
+    -- GCD 오염값 필터 (공생기 최단 CD: 60s / 시간 팽창)
+    if (duration or 0) < 5 then duration = 0 end
+    return start, duration
 end
 
 -- 본인이 보유한 공생기 스펠 ID 목록 수집
@@ -280,11 +290,49 @@ local function RegisterFrames()
     end)
 
     -- 공대 구성 변경 시 자동 보고
+    -- 리더/부리더: CHECK 전송 (모든 공대원에게 HAVE 요청)
+    -- 일반 공대원: HAVE 전송 (내 스킬만 보고)
     local rosterFrame = CreateFrame("Frame")
     rosterFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
     rosterFrame:SetScript("OnEvent", function()
         C_Timer.After(2, function()
-            if GetChannel() then RMT_SendHave() end
+            if not GetChannel() then return end
+            if IsLeaderOrAssist() then
+                RMT_SendCheck()
+            else
+                RMT_SendHave()
+            end
+        end)
+    end)
+
+    -- 구역 이동 / 로그인 처리
+    -- ① 구역 이동 시 이전 던전 로스터 초기화
+    -- ② 인스턴스 진입 시 자동 HAVE/CHECK + autoShow 패널
+    local zoneFrame = CreateFrame("Frame")
+    zoneFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    zoneFrame:SetScript("OnEvent", function(_, _, isInitialLogin, isReloadingUi)
+        C_Timer.After(3, function()
+            -- UI 리로드가 아닌 구역 이동 시 이전 로스터 초기화
+            if not isInitialLogin and not isReloadingUi then
+                RMT.roster = {}
+                RMT_UI_RefreshPanel()
+            end
+
+            local ch = GetChannel()
+            if not ch then return end
+
+            if IsLeaderOrAssist() then
+                RMT_SendCheck()
+                -- autoShow: 인스턴스(공격대/M+) 진입 시 패널 자동 표시
+                if RMTdb and RMTdb.autoShow then
+                    local _, instanceType = IsInInstance()
+                    if instanceType == "raid" or instanceType == "party" then
+                        RMT_UI_ShowPanel()
+                    end
+                end
+            else
+                RMT_SendHave()
+            end
         end)
     end)
 end
@@ -464,6 +512,7 @@ loader:SetScript("OnEvent", function(self, event, ...)
             rowSpacing = 0,      -- 0  ~ 24    (0이 최솟값)
             sortMode   = "name",
             tooltipOn  = true,
+            autoShow   = false,  -- 인스턴스 진입 시 패널 자동 표시 (리더/부리더 전용)
         }
         for k, v in pairs(defaults) do
             if RMTdb[k] == nil then RMTdb[k] = v end
