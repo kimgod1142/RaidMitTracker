@@ -129,6 +129,22 @@ RaidMitTracker/
 
 ---
 
+## WoW API 레퍼런스 (로컬)
+
+공식 Blizzard API 문서를 로컬에서 검색할 수 있습니다:
+
+```bash
+# 설치 위치: ~/Documents/addon/wow-ui-source/ (sparse clone, 12.0.1.66709)
+# 검색 스크립트: ~/Documents/addon/wow-api
+
+wow-api GetSpellCooldown          # 시그니처 + SecretWhen 플래그 확인
+wow-api UNIT_SPELLCAST_SUCCEEDED  # 이벤트 페이로드 확인
+wow-api HasRestrictions           # 제한된 API 전체 목록
+wow-api SecretWhen                # Secret value 조건 전체
+```
+
+---
+
 ## 워크플로우
 
 ```bash

@@ -2,6 +2,165 @@
 
 ---
 
+## v1.1.0 — Session 4 (2026-04-01)
+
+### 개요
+구역 이동 시 로스터 재동기화 문제 해결, 리더 자동 CHECK, `GetCooldown` pcall 강화, autoShow 옵션 추가.
+원격(Session 3)에서 작업된 커밋들을 rebase 병합.
+
+---
+
+### 기능 추가
+
+#### `PLAYER_ENTERING_WORLD` — 구역 이동 시 자동 재동기화
+- **문제**: 던전 진입·퇴장 시 로스터가 초기화되지 않고 이전 데이터가 잔류. 늦게 합류한 파티원의 스킬 미등록
+- **수정**: `zoneFrame`으로 `PLAYER_ENTERING_WORLD` 이벤트 감지
+  - 구역 이동 시 `RMT.roster = {}` 초기화
+  - 리더/부리더: 3초 후 `RMT_SendCheck()` 자동 전송
+  - 일반 파티원: 3초 후 `RMT_SendHave()` 자동 전송
+
+```lua
+zoneFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+zoneFrame:SetScript("OnEvent", function(_, _, isInitialLogin, isReloadingUi)
+    -- 로그인/리로드는 ADDON_LOADED에서 이미 처리됨 → 구역 이동만 처리
+    if isInitialLogin or isReloadingUi then return end
+    RMT.roster = {}
+    C_Timer.After(3, function()
+        if UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") then
+            RMT_SendCheck()
+        else
+            RMT_SendHave()
+        end
+    end)
+end)
+```
+
+---
+
+#### `GROUP_ROSTER_UPDATE` — 리더/부리더 자동 CHECK 전송
+- **문제**: 기존에는 GROUP_ROSTER_UPDATE 시 항상 `RMT_SendHave()`만 전송 → 리더가 구성원 변경을 감지해도 CHECK를 보내지 않아 새 파티원 정보 미수집
+- **수정**: 리더/부리더 여부에 따라 분기
+
+```lua
+-- Before: 모두 HAVE 전송
+C_Timer.After(2, RMT_SendHave)
+
+-- After: 리더면 CHECK, 일반 파티원이면 HAVE
+C_Timer.After(2, function()
+    if UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") then
+        RMT_SendCheck()
+    else
+        RMT_SendHave()
+    end
+end)
+```
+
+---
+
+#### `autoShow` 옵션 — 인스턴스 진입 시 패널 자동 표시
+- 신규 SavedVariables 키: `autoShow = false` (기본 비활성)
+- `PLAYER_ENTERING_WORLD` 이벤트에서 `IsInInstance()` 체크 → 인스턴스 진입 + 리더/부리더 + `autoShow == true` 조건 충족 시 패널 자동 표시
+- `Options.lua` 기능 섹션에 체크박스 추가
+- `Locales.lua` `AUTO_SHOW` 키 추가 (EN/KR)
+
+```lua
+-- PLAYER_ENTERING_WORLD 핸들러 내
+local inInstance = IsInInstance()
+if inInstance and RMTdb.autoShow
+    and (UnitIsGroupLeader("player") or UnitIsGroupAssistant("player")) then
+    RMT_UI_ShowPanel()
+end
+```
+
+---
+
+### 버그 수정 / 방어 코딩
+
+#### `GetCooldown()` — pcall 강화 + GCD 오염값 필터
+- **배경**: Session 3에서 pcall을 추가했으나 `C_Spell.GetSpellCooldown` 경로만 보호.
+  `GetSpellCooldown` (구버전 fallback) 경로는 미보호 상태였음
+- **추가 문제**: WoW 12.0에서 `C_Spell.GetSpellCooldown`이 GCD(~1.5s) 상태를 가끔 반환하는 버그 존재 → `duration < 5s`를 유효 쿨타임으로 오해
+- **수정**:
+  1. 양쪽 API 경로 모두 pcall 보호
+  2. `duration < 5` 조건 시 `duration = 0` (GCD 오염값 폐기)
+
+```lua
+local function GetCooldown(spellID)
+    local start, duration = 0, 0
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local ok, info = pcall(C_Spell.GetSpellCooldown, spellID)
+        if ok and info then
+            start    = info.startTime or 0
+            duration = info.duration  or 0
+        end
+    elseif type(GetSpellCooldown) == "function" then
+        local ok
+        ok, start, duration = pcall(GetSpellCooldown, spellID)
+        if not ok then start, duration = 0, 0 end
+    end
+    if (duration or 0) < 5 then duration = 0 end
+    return start, duration
+end
+```
+
+---
+
+#### `GetChannel()` — INSTANCE_CHAT 크로스렐름 지원 (Session 3 누락분 반영)
+- Session 3 DEVLOG에는 기술됐으나 코드에 미반영된 상태였음 → 이번 세션에서 확인 후 적용
+- 인스턴스(M+, 공격대) 내에서 `PARTY`/`RAID` 채널이 크로스렐름 파티원에게 미도달하는 문제 수정
+
+```lua
+local function GetChannel()
+    local inInstance = IsInInstance()
+    if IsInRaid()  then return inInstance and "INSTANCE_CHAT" or "RAID"  end
+    if IsInGroup() then return inInstance and "INSTANCE_CHAT" or "PARTY" end
+    return nil
+end
+```
+
+---
+
+#### string-keyed 테이블 fallback — 비설치 파티원 추적 강화
+- **문제**: WoW 12.0에서 파티원의 `UNIT_SPELLCAST_SUCCEEDED` spellID는 secret value → `RMT_SPELLS[spellID]` (numeric key) 접근 불가. 기존 pcall 방어만으로는 에러를 막지만 추적도 실패
+- **해결**: `tostring(secretNumber)`은 허용됨을 이용
+  - `RMT_SPELLS_STR[tostring(id)]` = string-keyed 병렬 테이블 (`ADDON_LOADED` 시 초기화)
+  - `memberFrame`에서 numeric key pcall 실패 시 string-keyed fallback으로 재시도
+  - **효과**: 애드온 미설치 파티원도 공생기 사용을 감지 가능
+
+```lua
+-- ADDON_LOADED 시
+for id, data in pairs(RMT_SPELLS) do
+    RMT_SPELLS_STR[tostring(id)] = data
+end
+
+-- memberFrame OnEvent
+local ok, result = pcall(function() return RMT_SPELLS[spellID] end)
+if ok then
+    dbEntry = result
+else
+    -- secret number → tostring → string key로 조회
+    local ok2, sid = pcall(tostring, spellID)
+    if ok2 and sid then dbEntry = RMT_SPELLS_STR[sid] end
+end
+```
+
+---
+
+### Session 3 원격 커밋 rebase 병합
+
+Session 4 작업 전 원격에 Session 3 커밋이 올라와 있어 `git pull --rebase origin main` 후 진행.
+병합된 변경사항은 DEVLOG Session 3 섹션 참고.
+
+---
+
+### 변경된 파일
+- `RaidMitTracker.lua` — PLAYER_ENTERING_WORLD 핸들러, GROUP_ROSTER_UPDATE CHECK 분기, GetCooldown pcall 전면 강화, GetChannel INSTANCE_CHAT 적용, string-keyed fallback, castFrame pcall 통일
+- `Options.lua` — autoShow 체크박스 추가
+- `Locales.lua` — AUTO_SHOW 키 추가 (EN/KR), HELP 업데이트
+- `AGENTS.md` — Session 4 작업 내용 기록
+
+---
+
 ## v1.1.0 — Session 3 (2026-04-01)
 
 ### 개요

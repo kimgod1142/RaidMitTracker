@@ -20,6 +20,12 @@ RMT = {
     db       = nil,
 }
 
+-- WoW 12.0 Secret Value 우회용 string-keyed 룩업 테이블
+-- 파티원 UNIT_SPELLCAST_SUCCEEDED의 spellID는 numeric key로 테이블 접근 불가
+-- tostring(secretNumber)은 허용됨 → RMT_SPELLS_STR[tostring(spellID)]로 조회
+-- ADDON_LOADED 이후 SpellDB가 로드된 시점에서 초기화 (InitSpellsStr 참고)
+local RMT_SPELLS_STR = {}
+
 -- ================================================================
 -- HELPERS
 -- ================================================================
@@ -32,8 +38,9 @@ local function IsLeaderOrAssist()
 end
 
 local function GetChannel()
-    if IsInRaid()  then return "RAID"  end
-    if IsInGroup() then return "PARTY" end
+    local inInstance = IsInInstance()
+    if IsInRaid()  then return inInstance and "INSTANCE_CHAT" or "RAID"  end
+    if IsInGroup() then return inInstance and "INSTANCE_CHAT" or "PARTY" end
     return nil
 end
 
@@ -247,7 +254,10 @@ local function RegisterFrames()
     local castFrame = CreateFrame("Frame")
     castFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
     castFrame:SetScript("OnEvent", function(_, _, _, _, spellID)
-        if RMT_SPELLS[spellID] then
+        -- player 본인 spellID는 secret value 아님 — pcall 불필요
+        -- 단, DB 조회 패턴 통일을 위해 직접 접근 유지
+        local ok, inDB = pcall(function() return RMT_SPELLS[spellID] end)
+        if ok and inDB then
             SendUsed(spellID)
         end
     end)
@@ -260,15 +270,26 @@ local function RegisterFrames()
     for i = 1, 40 do memberUnits[#memberUnits + 1] = "raid" .. i end
     memberFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unpack(memberUnits))
     memberFrame:SetScript("OnEvent", function(_, _, unitID, _, spellID)
-        if not RMT_SPELLS[spellID] then return end
+        -- ⚠️ 파티원 UNIT_SPELLCAST_SUCCEEDED 의 spellID는 WoW 12.0 secret value
+        --    numeric key로 테이블 접근 불가 → pcall 먼저 시도
+        --    pcall 실패 시 string-keyed fallback (tostring은 secret number에서도 허용됨)
+        --    → 애드온 미설치 파티원도 추적 가능
+        local dbEntry
+        local ok, result = pcall(function() return RMT_SPELLS[spellID] end)
+        if ok then
+            dbEntry = result
+        else
+            local ok2, sid = pcall(tostring, spellID)
+            if ok2 and sid then dbEntry = RMT_SPELLS_STR[sid] end
+        end
+        if not dbEntry then return end
         if UnitIsUnit(unitID, "player") then return end  -- 본인은 castFrame에서 처리
 
         local unitName = UnitName(unitID)
         if not unitName then return end
         local name = unitName:match("^([^%-]+)") or unitName
 
-        local dbEntry = RMT_SPELLS[spellID]
-        ProcessUsed(name, spellID, GetTime(), dbEntry and dbEntry.cd or 180)
+        ProcessUsed(name, spellID, GetTime(), dbEntry.cd or 180)
     end)
 
     -- 전멸/소프트리셋 감지
@@ -516,6 +537,11 @@ loader:SetScript("OnEvent", function(self, event, ...)
         }
         for k, v in pairs(defaults) do
             if RMTdb[k] == nil then RMTdb[k] = v end
+        end
+
+        -- string-keyed fallback 테이블 초기화 (SpellDB가 이미 로드된 상태)
+        for id, data in pairs(RMT_SPELLS) do
+            RMT_SPELLS_STR[tostring(id)] = data
         end
 
         RMT_UI_Init()
