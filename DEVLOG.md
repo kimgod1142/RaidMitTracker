@@ -153,8 +153,49 @@ Session 4 작업 전 원격에 Session 3 커밋이 올라와 있어 `git pull --
 
 ---
 
+#### 성능 최적화 — OnUpdate throttle + 패널 Hide 시 완전 중단
+
+Loxx Interrupt Tracker가 실제 유저 환경에서 프레임 드랍/렉을 유발한다는 보고를 참고.
+RMT는 배포 애드온으로서 게임 퍼포먼스 영향 최소화를 우선 목표로 설정.
+
+- **문제 1**: `OnUpdate`가 매 프레임(~60fps) 실행. 패널이 숨겨져도 `activeRows`가 남아있으면 계속 순회
+- **문제 2**: `panel:Hide()` 시 행이 해제되지 않아 빈 순회 지속
+
+```lua
+-- Before: 매 프레임 실행, 패널 상태와 무관
+updateFrame:SetScript("OnUpdate", function()
+    if #activeRows == 0 then return end  -- 이 체크도 매 프레임 실행됨
+    ...
+end)
+
+-- After: 0.2s 간격 throttle + 패널 표시 중에만 실행
+local UPDATE_TICK = 0.2
+local tickAccum   = 0
+
+local function DoUpdate(_, elapsed)
+    tickAccum = tickAccum + elapsed
+    if tickAccum < UPDATE_TICK then return end
+    tickAccum = 0
+    ...
+end
+
+panel:SetScript("OnShow", function()
+    updateFrame:SetScript("OnUpdate", DoUpdate)   -- 패널 열릴 때만 시작
+end)
+panel:SetScript("OnHide", function()
+    updateFrame:SetScript("OnUpdate", nil)         -- 패널 닫히면 완전 중단
+    for _, row in ipairs(activeRows) do ReleaseRow(row) end
+    activeRows = {}
+end)
+```
+
+**효과**: 패널 닫힌 상태 → CPU 사용 0. 열린 상태에서도 60fps → 5fps (쿨타임은 초 단위라 체감 차이 없음)
+
+---
+
 ### 변경된 파일
 - `RaidMitTracker.lua` — PLAYER_ENTERING_WORLD 핸들러, GROUP_ROSTER_UPDATE CHECK 분기, GetCooldown pcall 전면 강화, GetChannel INSTANCE_CHAT 적용, string-keyed fallback, castFrame pcall 통일
+- `UI.lua` — OnUpdate throttle(0.2s), OnShow/OnHide 기반 등록/해제, 패널 Hide 시 행 해제
 - `Options.lua` — autoShow 체크박스 추가
 - `Locales.lua` — AUTO_SHOW 키 추가 (EN/KR), HELP 업데이트
 - `AGENTS.md` — Session 4 작업 내용 기록

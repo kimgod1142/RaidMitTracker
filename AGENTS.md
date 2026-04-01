@@ -21,22 +21,28 @@
 
 - `PLAYER_ENTERING_WORLD` 핸들러 추가 — 구역 이동 시 로스터 초기화 + 자동 HAVE/CHECK
 - `GROUP_ROSTER_UPDATE` 개선 — 리더/부리더는 CHECK 자동 전송 (이전: HAVE만 전송)
-- `GetCooldown()` pcall 방어 + GCD 오염값 필터 (duration < 5s 무시)
-- `autoShow` 옵션 추가 — 인스턴스 진입 시 패널 자동 표시 (리더 전용)
+- `GetCooldown()` pcall 방어 전면 강화 + GCD 오염값 필터 (duration < 5s 무시)
+- `autoShow` 옵션 추가 — 인스턴스 진입 시 패널 자동 표시 (리더/부리더 전용)
+- `GetChannel()` INSTANCE_CHAT 적용 — Session 3 코드 미반영분 확인 후 수정
+- **string-keyed fallback** — `tostring(secretSpellID)` 이용, 비설치 파티원도 감지
+- **성능 최적화 (UI.lua)**:
+  - `OnUpdate` 60fps → 0.2s 간격 throttle
+  - `panel:OnHide` 시 `SetScript("OnUpdate", nil)` + 행 전부 해제
+  - 패널이 닫히면 CPU 사용 완전 0
 - 원격 Session 3 변경 rebase 병합:
   - Secret Value 버그 3종 수정 (M+ 실전에서 발견)
-  - `INSTANCE_CHAT` 크로스렐름 지원
   - `CollectMySpells()` 실제 탤런트 CD 반영
   - 승천(114052) SpellDB 추가
   - Options.lua 추적 정확도 안내 섹션
+- DEVLOG.md Session 4 전체 이력 기록
 
 ---
 
 ## 다음 우선순위
 
-1. **인게임 테스트** — PLAYER_ENTERING_WORLD/autoShow 실제 동작 확인
+1. **인게임 테스트** — PLAYER_ENTERING_WORLD / autoShow / string-keyed fallback 실제 동작 확인
 2. **SpellDB 검증** — 아래 "미확인 스펠 ID" 목록 인게임에서 확인 필요
-3. **공격대 규모 테스트** — RegisterUnitEvent에 raid1-40 unpack 안정성 검증
+3. **공격대 규모 테스트** — RegisterUnitEvent에 raid1-40 unpack(44 유닛) 안정성 검증
 4. **v1.2.0 계획** — 아래 로드맵 참고
 
 ---
@@ -66,9 +72,9 @@
 - [ ] `PLAYER_ENTERING_WORLD` 동작 검증 후 안정화
 - [ ] 공격대 규모(25/40인) RegisterUnitEvent 안정성 확인
 - [ ] 자동 CHECK 타이밍 조정 (현재 2~3s, 상황에 따라 최적화 필요)
-- [ ] Loxx에서 배운 패턴 추가 반영:
-  - string-keyed 테이블 fallback (spellID taint 대비)
-  - 주기적 STATE resync (USED 메시지 유실 대비)
+- [x] string-keyed 테이블 fallback (Session 4 완료)
+- [ ] 주기적 STATE resync (USED 메시지 유실 대비) — 합류자 감지 시에만 전송 검토
+- [ ] OnUpdate throttle 추가 성능 튜닝 (현재 0.2s, 실전 반응성 확인 후 조정)
 
 ---
 
